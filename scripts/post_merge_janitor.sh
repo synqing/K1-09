@@ -66,7 +66,10 @@ if ! python3 "$METRICS_SCRIPT" --write-analysis >"$BEFORE_TMP" 2>/dev/null; then
     printf '{}' >"$BEFORE_TMP"
   fi
 fi
-BEFORE_METRICS="$(cat "$BEFORE_TMP")"
+B_HEADERS=$(jq -r '.headers_count // 0' "$BEFORE_TMP" 2>/dev/null || echo 0)
+B_SOURCES=$(jq -r '.sources_count // 0' "$BEFORE_TMP" 2>/dev/null || echo 0)
+B_EDGES=$(jq -r '.edges_count // 0' "$BEFORE_TMP" 2>/dev/null || echo 0)
+B_CYCLES=$(jq -r '.cycles_count // 0' "$BEFORE_TMP" 2>/dev/null || echo 0)
 rm -f "$BEFORE_TMP"
 popd >/dev/null
 
@@ -80,26 +83,14 @@ if ! python3 "$METRICS_SCRIPT" --write-analysis >"$AFTER_TMP" 2>/dev/null; then
     printf '{}' >"$AFTER_TMP"
   fi
 fi
-AFTER_METRICS="$(cat "$AFTER_TMP")"
+MAIN_SHA="$(git rev-parse --short HEAD)"
+A_HEADERS=$(jq -r '.headers_count // 0' "$AFTER_TMP" 2>/dev/null || echo 0)
+A_SOURCES=$(jq -r '.sources_count // 0' "$AFTER_TMP" 2>/dev/null || echo 0)
+A_EDGES=$(jq -r '.edges_count // 0' "$AFTER_TMP" 2>/dev/null || echo 0)
+A_CYCLES=$(jq -r '.cycles_count // 0' "$AFTER_TMP" 2>/dev/null || echo 0)
 rm -f "$AFTER_TMP"
 
 git worktree remove -f "$WORKTREE" >/dev/null 2>&1 || true
-
-extract_val() {
-  jq -r "$1 // 0" <<<"$2"
-}
-
-B_HEADERS="$(extract_val '.headers_count' "$BEFORE_METRICS")"
-B_SOURCES="$(extract_val '.sources_count' "$BEFORE_METRICS")"
-B_EDGES="$(extract_val '.edges_count' "$BEFORE_METRICS")"
-B_CYCLES="$(extract_val '.cycles_count' "$BEFORE_METRICS")"
-
-A_HEADERS="$(extract_val '.headers_count' "$AFTER_METRICS")"
-A_SOURCES="$(extract_val '.sources_count' "$AFTER_METRICS")"
-A_EDGES="$(extract_val '.edges_count' "$AFTER_METRICS")"
-A_CYCLES="$(extract_val '.cycles_count' "$AFTER_METRICS")"
-
-MAIN_SHA="$(git rev-parse --short HEAD)"
 
 COMMENT="**Post-merge janitor** ✅
 
