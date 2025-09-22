@@ -91,6 +91,7 @@ graph LR
   "src/colors.cpp" --> "src/constants.h"
   "src/system.h" --> "src/globals.h"
   "src/system.h" --> "<external>: esp_pm.h"
+  "src/lightshow_modes.cpp" --> "src/lightshow_modes.h"
   "src/Logger.h" --> "<external>: Arduino.h"
   "src/Logger.h" --> "<external>: stdarg.h"
   "src/Logger.h" --> "<external>: string.h"

@@ -706,11 +706,25 @@
       "risk_score": 19,
       "symbols": []
     },
-    "src/lightshow_modes.h": {
+    "src/lightshow_modes.cpp": {
       "functions": [
         "cache_frame_config",
+        "scale_component_u8",
+        "pack_led_sample",
         "get_smooth_spectrogram",
-        "calc_chromagram_color",
+        "calc_chromagram_color"
+      ],
+      "includes": [
+        "lightshow_modes.h"
+      ],
+      "incoming": 0,
+      "outgoing": 1,
+      "path": "src/lightshow_modes.cpp",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/lightshow_modes.h": {
+      "functions": [
         "avg_bins",
         "test_mode",
         "light_mode_gdft",
@@ -734,10 +748,10 @@
         "palettes/palettes_bridge.h",
         "palettes/palette_luts_api.h"
       ],
-      "incoming": 1,
+      "incoming": 2,
       "outgoing": 10,
       "path": "src/lightshow_modes.h",
-      "risk_score": 11,
+      "risk_score": 12,
       "symbols": []
     },
     "src/main.cpp": {
