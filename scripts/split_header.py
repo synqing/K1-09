@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mechanical header splitter (safe v3d).
+Mechanical header splitter (safe v3e).
 
 Fixes vs v3c:
 - Treat preprocessor lines as hard separators (no attempt to "finish" any pending statement on a PP line).
@@ -53,6 +53,12 @@ ATTR_RE = re.compile(
     r'|__attribute__\s*\(\(.*?\)\)'
     r'|alignas\s*\([^)]*\))',
     re.S
+)
+
+DECL_HEAD_RE = re.compile(
+    r'^\s*(?:(?:constexpr|constinit|const|static|volatile|signed|unsigned|short|long|char|int|float|double|bool|auto'
+    r'|struct|class|union)\b|[A-Za-z_]\w*(?:::\s*[A-Za-z_]\w*)*(?:\s*<[^;{}()]*>)?)'
+    r'(?:\s+(?:[*&]\s*|const\b|volatile\b|constexpr\b|restrict\b))*\s+[A-Za-z_]\w*(?:\s*\[[^\]]*\])*\s*$'
 )
 
 def strip_c_comments(s: str) -> str:
@@ -115,6 +121,11 @@ def remove_storage_attrs(s: str) -> str:
     """Strip attrs unsuitable for 'extern'."""
     s = ATTR_RE.sub(' ', s)
     s = re.sub(r'\bstatic\b', ' ', s)
+    return compact_ws(s)
+
+def normalize_decl_head(s: str) -> str:
+    s = re.sub(r'(?<=\w)([*&])', r' \1', s)
+    s = re.sub(r'([*&])(?=\w)', r'\1 ', s)
     return compact_ws(s)
 
 # --- parser ------------------------------------------------------------------
@@ -282,6 +293,15 @@ def _classify_statement(original_text, parse_text, start_idx, end_idx):
 
     looks_like_func = '(' in stmt and ')' in stmt and '{' not in stmt[:stmt.find(')')+1]
     if (has_equals or (is_array_decl and has_braces_init)) and not looks_like_func:
+        init_pos = top_level_init_pos(stmt)
+        if init_pos == -1:
+            return
+        left = remove_storage_attrs(stmt[:init_pos])
+        left_clean = left.strip()
+        if not left_clean or '.' in left_clean or '->' in left_clean:
+            return
+        if not DECL_HEAD_RE.match(normalize_decl_head(left_clean)):
+            return
         block = original_text[start_idx:end_idx]
         yield ("var", start_idx, end_idx, block)
         return
@@ -336,10 +356,15 @@ def make_extern(var_block: str):
     if init_pos == -1:
         return None
 
-    left = var_block[:init_pos]
-    left = remove_storage_attrs(left)
+    left = remove_storage_attrs(var_block[:init_pos])
+    left_clean = left.strip()
 
-    m = NAME_ARRAYS_RE.match(left.strip())
+    if not left_clean or '.' in left_clean or '->' in left_clean:
+        return None
+    if not DECL_HEAD_RE.match(normalize_decl_head(left_clean)):
+        return None
+
+    m = NAME_ARRAYS_RE.match(left_clean)
     if not m:
         return None
 
