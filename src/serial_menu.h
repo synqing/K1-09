@@ -420,7 +420,7 @@ void parse_command(char* command_buf) {
   else if (strcmp(command_buf, "identify") == 0) {
 
     ack();
-    CRGB16 col = {1.00, 0.25, 0.00};
+    CRGB16 col = {{1.00}, {0.25}, {0.00}};
     blocking_flash(col);
 
   }
