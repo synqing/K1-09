@@ -47,6 +47,12 @@ else
   echo "No linked issue detected."
 fi
 
+METRICS_SCRIPT="$(realpath scripts/metrics_report.py 2>/dev/null || true)"
+if [[ -z "$METRICS_SCRIPT" || ! -f "$METRICS_SCRIPT" ]]; then
+  echo "metrics_report.py not found; ensure the script exists before running janitor." >&2
+  exit 1
+fi
+
 WORKTREE=".janitor_before"
 if [[ -d "$WORKTREE" ]]; then
   git worktree remove -f "$WORKTREE"
@@ -54,14 +60,14 @@ fi
 git worktree add -f "$WORKTREE" "$BASE_SHA" >/dev/null 2>&1
 
 pushd "$WORKTREE" >/dev/null
-BEFORE_METRICS="$(python3 scripts/metrics_report.py --write-analysis || python3 scripts/metrics_report.py || echo '{}')"
+BEFORE_METRICS="$(python3 "$METRICS_SCRIPT" --write-analysis || python3 "$METRICS_SCRIPT" || echo '{}')"
 popd >/dev/null
 
 git fetch origin "$BASE_REF" --quiet
 git checkout "$BASE_REF"
 git pull --ff-only
 
-AFTER_METRICS="$(python3 scripts/metrics_report.py --write-analysis || python3 scripts/metrics_report.py || echo '{}')"
+AFTER_METRICS="$(python3 "$METRICS_SCRIPT" --write-analysis || python3 "$METRICS_SCRIPT" || echo '{}')"
 
 git worktree remove -f "$WORKTREE" >/dev/null 2>&1 || true
 
