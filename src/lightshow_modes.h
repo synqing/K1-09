@@ -364,7 +364,7 @@ inline void light_mode_kaleidoscope() {
     g_val *= prog * brightness_mid;
     b_val *= prog * brightness_high;
 
-    CRGB16 col = { r_val, g_val, b_val };
+    CRGB16 col = {{ r_val }, { g_val }, { b_val }};
     // COMMENTED OUT [2025-09-20 15:45] - Bug: guaranteed 10% desaturation even at max CONFIG.SATURATION
     // col = desaturate(col, 0.1 + (0.9 - 0.9*CONFIG.SATURATION));
     // SATURATION FIX: Proper saturation control - only desaturate when CONFIG.SATURATION < 1.0
@@ -597,7 +597,7 @@ inline void light_mode_bloom(CRGB16* leds_prev_buffer) { // Accept previous buff
   }
   */
 
-  CRGB16 final_insert_color = { temp_col_rgb.r / 255.0, temp_col_rgb.g / 255.0, temp_col_rgb.b / 255.0 };
+  CRGB16 final_insert_color = {{ temp_col_rgb.r / 255.0 }, { temp_col_rgb.g / 255.0 }, { temp_col_rgb.b / 255.0 }};
   
   // Apply PHOTONS brightness scaling
   final_insert_color.r *= frame_config.PHOTONS;
@@ -1388,7 +1388,7 @@ inline void light_mode_waveform(CRGB16* leds_previous, CRGB16& last_color) { // 
   SQ15x16 smoothed_peak_fixed = SQ15x16(waveform_peak_scaled) * 0.02 + SQ15x16(waveform_peak_scaled_last) * 0.98;
   waveform_peak_scaled_last = float(smoothed_peak_fixed);
 
-  CRGB16 current_sum_color = {0,0,0};
+  CRGB16 current_sum_color = {{ 0 }, { 0 }, { 0 }};
   SQ15x16 total_magnitude = 0.0;
   
   for (uint8_t c = 0; c < 12; c++) {

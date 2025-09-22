@@ -210,7 +210,7 @@ inline CRGB16 hsv(SQ15x16 h, SQ15x16 s, SQ15x16 v) {
 
   CRGB base_color = CHSV(uint8_t(h * 255.0), uint8_t(s * 255.0), 255);
 
-  CRGB16 col = { base_color.r / 255.0, base_color.g / 255.0, base_color.b / 255.0 };
+  CRGB16 col = {{ base_color.r / 255.0 }, { base_color.g / 255.0 }, { base_color.b / 255.0 }};
   //col = desaturate(col, SQ15x16(1.0) - s);
 
   col.r *= v;
@@ -609,8 +609,8 @@ inline void render_photons_graph() {
   SQ15x16 tick_distance = (0.425 / (ticks - 1));
   SQ15x16 tick_pos = 0.025;
 
-  CRGB16 background = { 0.0, 0.0, 0.0 };
-  CRGB16 needle_color = { incandescent_lookup.r * incandescent_lookup.r * 0.9, incandescent_lookup.g * incandescent_lookup.g * 0.9, incandescent_lookup.b * incandescent_lookup.b * 0.9 };
+  CRGB16 background = {{ 0.0 }, { 0.0 }, { 0.0 }};
+  CRGB16 needle_color = {{ incandescent_lookup.r * incandescent_lookup.r * 0.9 }, { incandescent_lookup.g * incandescent_lookup.g * 0.9 }, { incandescent_lookup.b * incandescent_lookup.b * 0.9 }};
 
   //draw_line(leds_16_ui, 0.0, 0.5, background, 1.0);
 
@@ -621,7 +621,7 @@ inline void render_photons_graph() {
     SQ15x16 tick_brightness = 0.2 + 0.4 * prog;
     tick_brightness *= tick_brightness;
     tick_brightness *= tick_brightness;
-    CRGB16 tick_color = { 1.0 * tick_brightness, 0, 0 };
+    CRGB16 tick_color = {{ 1.0 * tick_brightness }, { 0 }, { 0 }};
 
     set_dot_position(GRAPH_DOT_1 + i, tick_pos);
     draw_dot(leds_16_ui, GRAPH_DOT_1 + i, tick_color);
@@ -685,8 +685,8 @@ inline void render_mood_graph() {
   SQ15x16 tick_distance = (0.425 / (ticks - 1));
   SQ15x16 tick_pos = 0.025;
 
-  CRGB16 background = { 0.0, 0.0, 0.0 };
-  CRGB16 needle_color = { incandescent_lookup.r * incandescent_lookup.r * 0.9, incandescent_lookup.g * incandescent_lookup.g * 0.9, incandescent_lookup.b * incandescent_lookup.b * 0.9 };
+  CRGB16 background = {{ 0.0 }, { 0.0 }, { 0.0 }};
+  CRGB16 needle_color = {{ incandescent_lookup.r * incandescent_lookup.r * 0.9 }, { incandescent_lookup.g * incandescent_lookup.g * 0.9 }, { incandescent_lookup.b * incandescent_lookup.b * 0.9 }};
 
   //draw_line(leds_16_ui, 0.0, 0.5, background, 1.0);
 
@@ -699,7 +699,7 @@ inline void render_mood_graph() {
     SQ15x16 tick_brightness = 0.1;  // + (0.025 * sin(radians * (1 << i)));  // + (0.04 * sin(radians * ((i<<1)+1)));
     SQ15x16 mix = i / float(ticks - 1);
 
-    CRGB16 tick_color = { tick_brightness * mix, 0.05 * tick_brightness, tick_brightness * (1.0 - mix) };
+    CRGB16 tick_color = {{ tick_brightness * mix }, { 0.05 * tick_brightness }, { tick_brightness * (1.0 - mix) }};
 
     set_dot_position(GRAPH_DOT_1 + i, tick_pos + (0.008 * sin(radians * (1 << i))));
     draw_dot(leds_16_ui, GRAPH_DOT_1 + i, tick_color);
@@ -960,7 +960,7 @@ inline void show_leds() {
     SQ15x16 bottom_value_g = 1 / backdrop_divisor;
     SQ15x16 bottom_value_b = 1 / backdrop_divisor;
 
-    CRGB16 backdrop_color = { bottom_value_r, bottom_value_g, bottom_value_b };
+    CRGB16 backdrop_color = {{ bottom_value_r }, { bottom_value_g }, { bottom_value_b }};
 
     SQ15x16 base_coat_width_scaled = base_coat_width * silent_scale;
 
@@ -1561,9 +1561,9 @@ inline void render_bulb_cover() {
 
   for (uint8_t i = 0; i < NATIVE_RESOLUTION; i++) {
     CRGB16 covered_color = {
-      leds_16[i].r * cover[i % 4],
-      leds_16[i].g * cover[i % 4],
-      leds_16[i].b * cover[i % 4],
+      { leds_16[i].r * cover[i % 4] },
+      { leds_16[i].g * cover[i % 4] },
+      { leds_16[i].b * cover[i % 4] },
     };
 
     SQ15x16 bulb_opacity = CONFIG.BULB_OPACITY;
@@ -1968,7 +1968,7 @@ inline CRGB16 adjust_hue_and_saturation(CRGB16 color, SQ15x16 hue, SQ15x16 satur
   b = fmax_fixed(SQ15x16(0.0), fmin_fixed(SQ15x16(1.0), b));
 
   // Return the resulting color
-  CRGB16 result = { r, g, b };
+  CRGB16 result = {{ r }, { g }, { b }};
   return result;
 }
 

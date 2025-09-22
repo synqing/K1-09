@@ -147,8 +147,8 @@ volatile uint32_t g_frame_seq_shown = 0;
 
 // Add state variables for waveform mode instances
 // CRITICAL: Preserve exact aggregate initialization syntax!
-CRGB16  waveform_last_color_primary = {0,0,0};
-CRGB16  waveform_last_color_secondary = {0,0,0};
+CRGB16  waveform_last_color_primary = {{ 0 }, { 0 }, { 0 }};
+CRGB16  waveform_last_color_secondary = {{ 0 }, { 0 }, { 0 }};
 
 SQ15x16 ui_mask[160];
 SQ15x16 ui_mask_height = 0.0;
@@ -355,7 +355,7 @@ SQ15x16 note_colors[12] = {
 
 // INCANDESCENT_LOOKUP ODR FIX [2025-09-19 17:15] - Moved from constants.h
 // CRITICAL: Preserve exact aggregate initialization syntax!
-CRGB16 incandescent_lookup = { 1.0000, 0.4453, 0.1562 };
+CRGB16 incandescent_lookup = {{ 1.0000 }, { 0.4453 }, { 0.1562 }};
 
 // LED_LERP ODR FIX [2025-09-19 17:15] - Moved from led_utilities.h
 LerpParams* led_lerp_params = NULL;
