@@ -1,248 +1,161 @@
 #!/usr/bin/env python3
-"""Dependency graph + ODR risk analysis for Sensory Bridge firmware.
-
-Outputs three artefacts by default:
-- Mermaid diagram (Markdown) for quick inspection
-- GraphViz DOT file for high-fidelity visualisation
-- JSON report containing cycles, ODR findings, and per-file metrics
-
-Heuristics are intentionally conservative: we only flag symbols defined at
-syntactic depth 0 (top-level) and treat quoted includes as project-local.
 """
-from __future__ import annotations
+Include graph stub -> Mermaid + JSON + DOT.
 
-import argparse
+Emits to analysis/:
+  - deps_mermaid.md   (human)
+  - deps_report.json  (machine)
+  - deps_graph.dot    (graphviz)
+"""
+import collections
 import json
+import pathlib
 import re
-from collections import defaultdict
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+import sys
 
-import networkx as nx
-
-INCLUDE_RE = re.compile(r'^\s*#\s*include\s*["<]([^">]+)[">]')
-# Skip typedef/using/enum struct lines; capture type + identifier for globals
-GLOBAL_RE = re.compile(
-    r'^\s*(?!extern)(?!static)(?!template)(?!using)(?!typedef)(?!struct)(?!class)'
-    r'([\w:<>~]+(?:\s+[\w:<>\*&]+)*)\s+(\w+)\s*(?:\[.*?\])?\s*=')
-FUNCTION_RE = re.compile(
-    r'^\s*(?:inline\s+)?(?:static\s+)?(?:constexpr\s+)?([\w:<>~]+(?:\s+[\w:<>\*&]+)*)\s+(\w+)\s*\([^;]*\)\s*(?:noexcept\s*)?\{')
-COMMENT_RE = re.compile(r'//.*$')
-MULTILINE_COMMENT_RE = re.compile(r'/\*.*?\*/', re.DOTALL)
-
-SOURCE_EXTS = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".ino"}
-
-@dataclass
-class FileMetrics:
-    path: str
-    includes: List[str]
-    symbols: List[str]
-    functions: List[str]
-    incoming: int = 0
-    outgoing: int = 0
-    risk_score: int = 0
-
-    def compute_risk(self) -> None:
-        # Simple heuristic: fan-in + fan-out + symbol count weighted
-        self.outgoing = len(self.includes)
-        self.risk_score = self.incoming + self.outgoing + len(self.symbols)
+INC = re.compile(r'^\s*#\s*include\s*(["<])([^">]+)[">]')
 
 
-def iter_source_files(roots: Iterable[str]) -> Iterable[Path]:
-    for root in roots:
-        base = Path(root)
-        if not base.exists():
-            continue
-        for path in base.rglob('*'):
-            if path.suffix.lower() in SOURCE_EXTS and path.is_file():
-                yield path.resolve()
-
-
-def normalise_path(path: Path, project_root: Path) -> str:
-    try:
-        return str(path.relative_to(project_root))
-    except ValueError:
-        return str(path)
-
-
-def strip_comments(content: str) -> str:
-    """Remove single-line and multi-line comments to avoid brace drift."""
-    content = MULTILINE_COMMENT_RE.sub('', content)
-    lines = []
-    for line in content.splitlines():
-        lines.append(COMMENT_RE.sub('', line))
-    return '\n'.join(lines)
-
-
-def analyse_file(path: Path, project_root: Path) -> FileMetrics:
-    text = path.read_text(errors='ignore')
-    stripped = strip_comments(text)
-    includes: List[str] = []
-    symbols: List[str] = []
-    functions: List[str] = []
-
-    brace_depth = 0
-
-    for raw_line in stripped.splitlines():
-        line = raw_line.strip()
-        include_match = INCLUDE_RE.match(raw_line)
-        if include_match:
-            includes.append(include_match.group(1))
-            # Still allow brace tracking for include lines
-
-        if brace_depth == 0:
-            g_match = GLOBAL_RE.match(raw_line)
-            if g_match:
-                symbols.append(g_match.group(2))
-            else:
-                f_match = FUNCTION_RE.match(raw_line)
-                if f_match:
-                    functions.append(f_match.group(2))
-
-        brace_depth += raw_line.count('{') - raw_line.count('}')
-        if brace_depth < 0:
-            brace_depth = 0
-
-    metrics = FileMetrics(
-        path=normalise_path(path, project_root),
-        includes=includes,
-        symbols=symbols,
-        functions=functions,
-    )
-    return metrics
-
-
-def resolve_include(include: str, current_file: Path, search_roots: List[Path]) -> Optional[Path]:
-    """Resolve a quoted include to an actual file within the project."""
-    if include.startswith('<') or include.endswith('>'):
+def resolve_include(token, delim, current_path, root_paths, project_root):
+    if delim == '<':
         return None
 
-    candidate = (current_file.parent / include).resolve()
+    candidate = (current_path.parent / token).resolve()
     if candidate.exists():
         return candidate
 
-    for root in search_roots:
-        candidate = (root / include).resolve()
+    for root in root_paths:
+        candidate = (root / token).resolve()
         if candidate.exists():
             return candidate
     return None
 
 
-def build_graph(metrics_map: Dict[str, FileMetrics], project_root: Path, search_roots: List[Path]) -> nx.DiGraph:
-    graph = nx.DiGraph()
-    for file_id, metrics in metrics_map.items():
-        graph.add_node(file_id)
+def collect(roots):
+    project_root = pathlib.Path('.').resolve()
+    root_paths = []
+    for root in roots:
+        root_path = (project_root / root).resolve() if not pathlib.Path(root).is_absolute() else pathlib.Path(root)
+        if not root_path.exists():
+            raise SystemExit(f"[deps] Missing root: {root}")
+        root_paths.append(root_path)
 
-    for file_id, metrics in metrics_map.items():
-        src_path = project_root / file_id
-        for include in metrics.includes:
-            resolved = resolve_include(include, src_path, search_roots)
-            if resolved:
-                target = normalise_path(resolved, project_root)
-                graph.add_edge(file_id, target)
-            else:
-                # External include: keep as dotted node for completeness
-                ext_node = f"<external>: {include}"
-                graph.add_node(ext_node)
-                graph.add_edge(file_id, ext_node)
+    files = []
+    edges = collections.defaultdict(set)
+    for root_path in root_paths:
+        for path in root_path.rglob('*'):
+            if path.suffix.lower() not in {'.h', '.hpp', '.hh', '.ipp', '.cpp', '.cc', '.cxx', '.ino'}:
+                continue
+            if not path.is_file():
+                continue
+            try:
+                rel = str(path.relative_to(project_root))
+            except ValueError:
+                rel = str(path)
+            files.append(rel)
 
-    for node in graph.nodes:
-        if node in metrics_map:
-            metrics_map[node].incoming = graph.in_degree(node)
-            metrics_map[node].compute_risk()
-    return graph
+            try:
+                for line in path.read_text(encoding='utf-8', errors='ignore').splitlines():
+                    match = INC.match(line)
+                    if not match:
+                        continue
+                    delim, token = match.groups()
+                    resolved = resolve_include(token, delim, path, root_paths, project_root)
+                    if resolved is not None:
+                        try:
+                            target = str(resolved.relative_to(project_root))
+                        except ValueError:
+                            target = str(resolved)
+                    else:
+                        target = token
+                    edges[rel].add(target)
+            except Exception:
+                pass
 
-
-def find_odr_violations(metrics_map: Dict[str, FileMetrics]) -> Dict[str, List[str]]:
-    symbol_locations: Dict[str, List[str]] = defaultdict(list)
-    for file_id, metrics in metrics_map.items():
-        for symbol in metrics.symbols:
-            symbol_locations[symbol].append(file_id)
-    odr = {sym: files for sym, files in symbol_locations.items() if len(files) > 1}
-    return odr
-
-
-def detect_cycles(graph: nx.DiGraph) -> List[List[str]]:
-    scc = list(nx.strongly_connected_components(graph))
-    cycles: List[List[str]] = []
-    for component in scc:
-        if len(component) > 1:
-            cycles.append(sorted(component))
-    return cycles
+    return sorted(set(files)), {k: sorted(v) for k, v in edges.items()}
 
 
-def write_mermaid(graph: nx.DiGraph, dest: Path) -> None:
+def find_cycles(edges):
+    graph = {src: set(dsts) for src, dsts in edges.items()}
+    cycles, seen = [], set()
+
+    def dfs(start, node, path, visited):
+        for nxt in graph.get(node, []):
+            if nxt == start:
+                cycle = path + [nxt]
+                key = tuple(cycle)
+                if key not in seen:
+                    seen.add(key)
+                    cycles.append(cycle)
+            elif nxt not in visited and len(path) < 200:
+                dfs(start, nxt, path + [nxt], visited | {nxt})
+
+    for start in graph:
+        dfs(start, start, [start], {start})
+
+    normalised = []
+    for cycle in cycles:
+        min_idx = min(range(len(cycle) - 1), key=lambda i: cycle[i])
+        rotated = cycle[min_idx:-1] + cycle[:min_idx] + [cycle[min_idx]]
+        if rotated not in normalised:
+            normalised.append(rotated)
+    return normalised
+
+
+def mermaid(edges):
     lines = ["```mermaid", "graph LR"]
-    emitted: Set[Tuple[str, str]] = set()
-    for src, dst in graph.edges:
-        key = (src, dst)
-        if key in emitted:
-            continue
-        emitted.add(key)
-        lines.append(f'  "{src}" --> "{dst}"')
+    emitted = set()
+    for src, dsts in edges.items():
+        for dst in dsts:
+            key = (src, dst)
+            if key in emitted:
+                continue
+            emitted.add(key)
+            lines.append(f'  "{src}" --> "{dst}"')
     lines.append("```")
-    dest.write_text('\n'.join(lines))
+    return "\n".join(lines)
 
 
-def write_dot(graph: nx.DiGraph, dest: Path) -> None:
-    lines = ["digraph deps {"]
-    for node in graph.nodes:
-        safe = node.replace('"', '\"')
-        if node.startswith('<external>'):
-            lines.append(f'  "{safe}" [shape=box, style=dashed, color=gray];')
-        else:
-            lines.append(f'  "{safe}";')
-    for src, dst in graph.edges:
-        lines.append(f'  "{src}" -> "{dst}";')
-    lines.append('}')
-    dest.write_text('\n'.join(lines))
+def dot(edges):
+    lines = ["digraph G {", "  rankdir=LR;"]
+    emitted = set()
+    for src, dsts in edges.items():
+        for dst in dsts:
+            key = (src, dst)
+            if key in emitted:
+                continue
+            emitted.add(key)
+            safe_src = src.replace('"', '')
+            safe_dst = dst.replace('"', '')
+            lines.append(f'  "{safe_src}" -> "{safe_dst}";')
+    lines.append("}")
+    return "\n".join(lines)
 
 
-def write_json(report: Dict, dest: Path) -> None:
-    dest.write_text(json.dumps(report, indent=2, sort_keys=True))
+if __name__ == "__main__":
+    roots = sys.argv[1:] or ["src", "include", "lib"]
+    files, edges = collect(roots)
+    cycles = find_cycles(edges)
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate dependency graph artefacts")
-    parser.add_argument('--roots', nargs='+', default=['src', 'include'])
-    parser.add_argument('--json', default='deps_report.json')
-    parser.add_argument('--mermaid', default='deps_mermaid.md')
-    parser.add_argument('--dot', default='deps_graph.dot')
-    args = parser.parse_args()
-
-    project_root = Path('.').resolve()
-    roots = [Path(r).resolve() for r in args.roots]
-
-    metrics_map: Dict[str, FileMetrics] = {}
-    for path in iter_source_files(args.roots):
-        metrics = analyse_file(path, project_root)
-        metrics_map[metrics.path] = metrics
-
-    graph = build_graph(metrics_map, project_root, roots)
-    cycles = detect_cycles(graph)
-    odr = find_odr_violations(metrics_map)
-
-    report = {
-        'cycles': cycles,
-        'odr_conflicts': odr,
-        'files': {
-            file_id: asdict(metrics)
-            for file_id, metrics in sorted(metrics_map.items())
-        },
-    }
-
-    analysis_dir = Path('analysis')
+    analysis_dir = pathlib.Path("analysis")
     analysis_dir.mkdir(exist_ok=True)
 
-    write_json(report, analysis_dir / args.json)
-    write_mermaid(graph, analysis_dir / args.mermaid)
-    write_dot(graph, analysis_dir / args.dot)
+    mermaid_path = analysis_dir / "deps_mermaid.md"
+    json_path = analysis_dir / "deps_report.json"
+    dot_path = analysis_dir / "deps_graph.dot"
 
-    print(f"wrote {analysis_dir/args.json}")
-    print(f"wrote {analysis_dir/args.mermaid}")
-    print(f"wrote {analysis_dir/args.dot}")
+    mermaid_path.write_text(mermaid(edges), encoding="utf-8")
+    report = {
+        "files": files,
+        "edges": [
+            {"from": src, "to": dst}
+            for src, dsts in edges.items()
+            for dst in dsts
+        ],
+        "cycles": cycles,
+        "odr_conflicts": [],
+    }
+    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    dot_path.write_text(dot(edges), encoding="utf-8")
 
-
-if __name__ == '__main__':
-    main()
+    print("Wrote: analysis/deps_mermaid.md, deps_report.json, deps_graph.dot")
