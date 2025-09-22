@@ -60,14 +60,28 @@ fi
 git worktree add -f "$WORKTREE" "$BASE_SHA" >/dev/null 2>&1
 
 pushd "$WORKTREE" >/dev/null
-BEFORE_METRICS="$(python3 "$METRICS_SCRIPT" --write-analysis || python3 "$METRICS_SCRIPT" || echo '{}')"
+BEFORE_TMP="$(mktemp)"
+if ! python3 "$METRICS_SCRIPT" --write-analysis >"$BEFORE_TMP" 2>/dev/null; then
+  if ! python3 "$METRICS_SCRIPT" >"$BEFORE_TMP" 2>/dev/null; then
+    printf '{}' >"$BEFORE_TMP"
+  fi
+fi
+BEFORE_METRICS="$(cat "$BEFORE_TMP")"
+rm -f "$BEFORE_TMP"
 popd >/dev/null
 
 git fetch origin "$BASE_REF" --quiet
 git checkout "$BASE_REF"
 git pull --ff-only
 
-AFTER_METRICS="$(python3 "$METRICS_SCRIPT" --write-analysis || python3 "$METRICS_SCRIPT" || echo '{}')"
+AFTER_TMP="$(mktemp)"
+if ! python3 "$METRICS_SCRIPT" --write-analysis >"$AFTER_TMP" 2>/dev/null; then
+  if ! python3 "$METRICS_SCRIPT" >"$AFTER_TMP" 2>/dev/null; then
+    printf '{}' >"$AFTER_TMP"
+  fi
+fi
+AFTER_METRICS="$(cat "$AFTER_TMP")"
+rm -f "$AFTER_TMP"
 
 git worktree remove -f "$WORKTREE" >/dev/null 2>&1 || true
 
