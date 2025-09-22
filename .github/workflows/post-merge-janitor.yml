@@ -1,0 +1,68 @@
+name: Post-merge Janitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Merged PR number to process"
+        required: true
+        type: number
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: post-merge-janitor-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  janitor:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history for base SHA worktree)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install tools (jq, gh)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          sudo apt-get install -y gh || true
+          gh --version || true
+
+      - name: Make janitor executable
+        run: |
+          chmod +x scripts/post_merge_janitor.sh || true
+
+      - name: Determine PR number
+        id: setpr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "PR=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Auth gh with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh auth status
+
+      - name: Run post-merge janitor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/post_merge_janitor.sh ${{ steps.setpr.outputs.PR }}
