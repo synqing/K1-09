@@ -1,0 +1,7 @@
+Checks: >
+  bugprone-*,performance-*,readability-*,modernize-*,misc-header-guard,
+  misc-include-cleaner,clang-diagnostic-*,clang-analyzer-*
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(src|include)/'
+AnalyzeTemporaryDtors: true
+FormatStyle: none
