@@ -122,7 +122,7 @@ if [[ "$pp_hdr_before" -ne "$pp_hdr_after" ]]; then
 fi
 
 cpp_hash_lines="$(grep -n '^[[:space:]]*#' "$CPP" || true)"
-if printf "%s\n" "$cpp_hash_lines" | grep -vE '^[[:space:]]*#include[[:space:]]+"[^"]+"' | grep -q '#'; then
+if printf "%s\n" "$cpp_hash_lines" | grep -vE '^[[:digit:]]+:[[:space:]]*#include[[:space:]]+"[^"]+"' | grep -q '#'; then
   echo "Invariant failed: found disallowed preprocessor directives in $CPP." >&2
   printf "%s\n" "$cpp_hash_lines" >&2
   exit 1
