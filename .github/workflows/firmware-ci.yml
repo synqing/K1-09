@@ -1,18 +1,15 @@
 name: Firmware CI
-
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
   pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
 
 jobs:
   build-and-validate:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,7 +19,7 @@ jobs:
       - name: Install PlatformIO
         run: |
           python -m pip install --upgrade pip
-          pip install platformio
+          pip install platformio regex==2024.5.15 networkx==3.3 graphviz==0.20.3
 
       - name: Cache PIO
         uses: actions/cache@v4
@@ -30,33 +27,32 @@ jobs:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('**/platformio.ini') }}
 
-      - name: Build (all environments)
-        run: |
-          pio run
+      - name: Make runner executable
+        run: chmod +x agent_runner.sh
 
-      - name: Install analysis deps
-        run: |
-          pip install regex==2024.5.15
-          pip install networkx==3.3 graphviz==0.20.3
-          sudo apt-get update
-          sudo apt-get install -y graphviz
+      - name: Build (all envs)
+        run: ./agent_runner.sh pio run
 
-      - name: Aggregate-Init Scanner (Strict)
-        run: |
-          python tools/aggregate_init_scanner.py --mode=strict --roots src include lib
+      - name: Dependency report (JSON + Mermaid + DOT)
+        run: ./agent_runner.sh python3 tools/deps_stub_report.py src include lib
 
-      - name: Dependency Report (dot + mermaid)
+      - name: Check analysis artifacts
         run: |
-          python tools/deps_stub_report.py --roots src include > analysis/deps_mermaid.md
-          dot -V || true
-        continue-on-error: true
+          test -s analysis/deps_report.json
+          test -s analysis/deps_mermaid.md
+          test -s analysis/deps_graph.dot
+          ls -lh analysis/
+
+      - name: Aggregate-init scanner (STRICT)
+        run: ./agent_runner.sh python3 tools/aggregate_init_scanner.py --mode=strict --roots src include lib
+
+      - name: Generate compile_commands.json
+        run: ./agent_runner.sh pio run -t compiledb
 
       - name: Upload analysis artifacts
         uses: actions/upload-artifact@v4
         with:
           name: analysis
           path: |
-            .pio
             analysis/**
-            **/build/**
-
+            compile_commands.json

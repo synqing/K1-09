@@ -1,3 +1,11 @@
 Reference.docs/
 .pio/
 .DS_Store
+
+# analysis outputs
+analysis/deps_report.json
+analysis/deps_mermaid.md
+analysis/deps_graph.dot
+
+# build system databases
+compile_commands.json

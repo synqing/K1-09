@@ -1,7 +1,11 @@
 BasedOnStyle: LLVM
 IndentWidth: 2
-ColumnLimit: 120
-AllowShortFunctionsOnASingleLine: Empty
-DerivePointerAlignment: false
-PointerAlignment: Left
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 100
+AllowShortIfStatementsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+BreakBeforeBraces: Linux
+NamespaceIndentation: None
 SortIncludes: true
+IncludeBlocks: Regroup
