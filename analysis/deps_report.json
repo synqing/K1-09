@@ -1,0 +1,1203 @@
+{
+  "cycles": [],
+  "files": {
+    "include/performance_optimized_trace.h": {
+      "functions": [
+        "trace_acquire_sample_chunk",
+        "trace_fastled_show",
+        "trace_mutex_operation"
+      ],
+      "includes": [
+        "Arduino.h",
+        "atomic",
+        "freertos/FreeRTOS.h",
+        "freertos/queue.h"
+      ],
+      "incoming": 3,
+      "outgoing": 4,
+      "path": "include/performance_optimized_trace.h",
+      "risk_score": 7,
+      "symbols": []
+    },
+    "src/GDFT.h": {
+      "functions": [
+        "process_GDFT",
+        "calculate_novelty"
+      ],
+      "includes": [
+        "debug/performance_monitor.h"
+      ],
+      "incoming": 1,
+      "outgoing": 1,
+      "path": "src/GDFT.h",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/GDFT_optimized.h": {
+      "functions": [
+        "fast_inv_sqrt",
+        "fast_sqrt",
+        "GDFT_optimized",
+        "GDFT_squared_magnitudes"
+      ],
+      "includes": [],
+      "incoming": 0,
+      "outgoing": 0,
+      "path": "src/GDFT_optimized.h",
+      "risk_score": 0,
+      "symbols": []
+    },
+    "src/Logger.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h",
+        "stdarg.h",
+        "string.h",
+        "usb_cdc_config.h"
+      ],
+      "incoming": 0,
+      "outgoing": 4,
+      "path": "src/Logger.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/audio_input_factory.h": {
+      "functions": [],
+      "includes": [
+        "driver/i2s.h",
+        "constants.h",
+        "globals.h"
+      ],
+      "incoming": 0,
+      "outgoing": 3,
+      "path": "src/audio_input_factory.h",
+      "risk_score": 3,
+      "symbols": []
+    },
+    "src/audio_processed_state.h": {
+      "functions": [],
+      "includes": [
+        "stdint.h",
+        "cstring",
+        "constants.h"
+      ],
+      "incoming": 2,
+      "outgoing": 3,
+      "path": "src/audio_processed_state.h",
+      "risk_score": 5,
+      "symbols": []
+    },
+    "src/audio_raw_state.h": {
+      "functions": [],
+      "includes": [
+        "stdint.h",
+        "cstring",
+        "constants.h"
+      ],
+      "incoming": 2,
+      "outgoing": 3,
+      "path": "src/audio_raw_state.h",
+      "risk_score": 5,
+      "symbols": []
+    },
+    "src/bridge_fs.h": {
+      "functions": [
+        "update_config_filename",
+        "init_config_defaults",
+        "factory_reset",
+        "restore_defaults",
+        "save_config",
+        "do_config_save",
+        "save_config_delayed",
+        "load_config",
+        "save_ambient_noise_calibration",
+        "load_ambient_noise_calibration",
+        "init_fs"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/bridge_fs.h",
+      "risk_score": 2,
+      "symbols": [
+        "config_save_pending"
+      ]
+    },
+    "src/buttons.h": {
+      "functions": [
+        "check_buttons"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/buttons.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/colors.cpp": {
+      "functions": [],
+      "includes": [
+        "constants.h"
+      ],
+      "incoming": 0,
+      "outgoing": 1,
+      "path": "src/colors.cpp",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/constants.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h",
+        "FastLED.h",
+        "FixedPoints.h",
+        "FixedPointsCommon.h",
+        "stdint.h"
+      ],
+      "incoming": 17,
+      "outgoing": 5,
+      "path": "src/constants.h",
+      "risk_score": 25,
+      "symbols": [
+        "notes",
+        "dither_table",
+        "hue_lookup"
+      ]
+    },
+    "src/core/globals.cpp": {
+      "functions": [],
+      "includes": [
+        "../globals.h",
+        "Arduino.h"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/core/globals.cpp",
+      "risk_score": 120,
+      "symbols": [
+        "CONFIG",
+        "mode_names",
+        "window_lookup",
+        "a_weight_table",
+        "spectrogram",
+        "spectrogram_smooth",
+        "chromagram_smooth",
+        "novelty_curve",
+        "spectral_history_index",
+        "note_spectrogram",
+        "note_spectrogram_smooth",
+        "note_spectrogram_smooth_frame_blending",
+        "note_spectrogram_long_term",
+        "note_chromagram",
+        "chromagram_max_val",
+        "chromagram_bass_max_val",
+        "smoothing_follower",
+        "smoothing_exp_average",
+        "chroma_val",
+        "chromatic_mode",
+        "sample_window",
+        "waveform",
+        "waveform_fixed_point",
+        "max_waveform_val_raw",
+        "max_waveform_val",
+        "max_waveform_val_follower",
+        "waveform_peak_scaled",
+        "silence",
+        "silent_scale",
+        "current_punch",
+        "sweet_spot_state",
+        "sweet_spot_state_follower",
+        "sweet_spot_min_temp",
+        "noise_complete",
+        "noise_samples",
+        "noise_iterations",
+        "g_frame_seq_write",
+        "g_frame_seq_ready",
+        "g_frame_seq_shown",
+        "waveform_last_color_primary",
+        "waveform_last_color_secondary",
+        "ui_mask_height",
+        "hue_shift",
+        "dither_step",
+        "led_thread_halt",
+        "g_last_encoder_activity_time",
+        "g_last_active_encoder",
+        "function_id",
+        "function_hits",
+        "SYSTEM_FPS",
+        "LED_FPS",
+        "main_override",
+        "last_rx_time",
+        "mode_transition_queued",
+        "noise_transition_queued",
+        "mode_destination",
+        "next_save_time",
+        "settings_updated",
+        "command_buf",
+        "command_buf_index",
+        "stream_audio",
+        "stream_fps",
+        "stream_max_mags",
+        "stream_max_mags_followers",
+        "stream_magnitudes",
+        "stream_spectrogram",
+        "stream_chromagram",
+        "debug_mode",
+        "chip_id",
+        "chip_id_high",
+        "chip_id_low",
+        "serial_iter",
+        "max_mags",
+        "max_mags_followers",
+        "mag_targets",
+        "mag_followers",
+        "mag_float_last",
+        "magnitudes",
+        "magnitudes_normalized",
+        "magnitudes_normalized_avg",
+        "magnitudes_last",
+        "magnitudes_final",
+        "min_silent_level_tracker",
+        "spectrogram_history_length",
+        "spectrogram_history_index",
+        "brightness_levels",
+        "msc_update_started",
+        "hue_position",
+        "hue_shift_speed",
+        "hue_push_direction",
+        "hue_destination",
+        "hue_shifting_mix",
+        "hue_shifting_mix_target",
+        "audio_vu_level",
+        "audio_vu_level_average",
+        "audio_vu_level_last",
+        "current_knob",
+        "base_coat_width",
+        "base_coat_width_target",
+        "MASTER_BRIGHTNESS",
+        "last_sample",
+        "SECONDARY_LIGHTSHOW_MODE",
+        "SECONDARY_MIRROR_ENABLED",
+        "SECONDARY_PHOTONS",
+        "SECONDARY_CHROMA",
+        "SECONDARY_MOOD",
+        "SECONDARY_SATURATION",
+        "SECONDARY_PRISM_COUNT",
+        "SECONDARY_INCANDESCENT_FILTER",
+        "SECONDARY_BASE_COAT",
+        "SECONDARY_REVERSE_ORDER",
+        "SECONDARY_AUTO_COLOR_SHIFT",
+        "ENABLE_SECONDARY_LEDS",
+        "g_race_condition_count",
+        "g_palette_ready",
+        "note_colors",
+        "incandescent_lookup",
+        "lerp_params_initialized"
+      ]
+    },
+    "src/core/performance_optimized_trace.cpp": {
+      "functions": [],
+      "includes": [
+        "performance_optimized_trace.h",
+        "freertos/task.h"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/core/performance_optimized_trace.cpp",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/debug/debug_manager.cpp": {
+      "functions": [],
+      "includes": [
+        "debug_manager.h",
+        "../globals.h"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/debug/debug_manager.cpp",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/debug/debug_manager.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h",
+        "stdint.h"
+      ],
+      "incoming": 7,
+      "outgoing": 2,
+      "path": "src/debug/debug_manager.h",
+      "risk_score": 9,
+      "symbols": []
+    },
+    "src/debug/palette_debug.cpp": {
+      "functions": [],
+      "includes": [
+        "palette_debug.h"
+      ],
+      "incoming": 0,
+      "outgoing": 1,
+      "path": "src/debug/palette_debug.cpp",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/debug/palette_debug.h": {
+      "functions": [
+        "debug_palette_index_walking",
+        "debug_palette_initialization",
+        "debug_color_shift_values",
+        "debug_palette_color_extraction",
+        "debug_frame_increment"
+      ],
+      "includes": [
+        "Arduino.h",
+        "../globals.h"
+      ],
+      "incoming": 2,
+      "outgoing": 2,
+      "path": "src/debug/palette_debug.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/debug/performance_monitor.cpp": {
+      "functions": [
+        "init_performance_monitor",
+        "update_performance_metrics",
+        "track_memory_usage",
+        "track_audio_metrics",
+        "track_gdft_performance",
+        "log_performance_data",
+        "format_perf_summary",
+        "format_perf_detailed",
+        "run_frequency_sweep_test",
+        "run_latency_test",
+        "run_stress_test",
+        "update_stress_test",
+        "handle_perf_command"
+      ],
+      "includes": [
+        "performance_monitor.h",
+        "debug_manager.h"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/debug/performance_monitor.cpp",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/debug/performance_monitor.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h",
+        "constants.h"
+      ],
+      "incoming": 5,
+      "outgoing": 2,
+      "path": "src/debug/performance_monitor.h",
+      "risk_score": 7,
+      "symbols": []
+    },
+    "src/encoders.h": {
+      "functions": [
+        "init_encoders",
+        "check_encoders",
+        "update_encoder_leds"
+      ],
+      "includes": [
+        "Arduino.h",
+        "Wire.h",
+        "stdint.h",
+        "FixedPoints.h",
+        "FixedPointsCommon.h",
+        "m5rotate8.h",
+        "USB.h",
+        "math.h",
+        "constants.h",
+        "globals.h",
+        "palettes/palette_luts_api.h"
+      ],
+      "incoming": 0,
+      "outgoing": 11,
+      "path": "src/encoders.h",
+      "risk_score": 11,
+      "symbols": []
+    },
+    "src/frame_sync.h": {
+      "functions": [],
+      "includes": [
+        "cstring",
+        "globals.h"
+      ],
+      "incoming": 2,
+      "outgoing": 2,
+      "path": "src/frame_sync.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/globals.h": {
+      "functions": [
+        "lock_leds",
+        "unlock_leds"
+      ],
+      "includes": [
+        "stdint.h",
+        "stdbool.h",
+        "FixedPoints.h",
+        "FixedPointsCommon.h",
+        "Ticker.h",
+        "freertos/task.h",
+        "freertos/FreeRTOS.h",
+        "freertos/semphr.h",
+        "FirmwareMSC.h",
+        "USB.h",
+        "HWCDC.h",
+        "constants.h",
+        "Arduino.h",
+        "FastLED.h"
+      ],
+      "incoming": 17,
+      "outgoing": 14,
+      "path": "src/globals.h",
+      "risk_score": 31,
+      "symbols": []
+    },
+    "src/hmi/dual_encoder_controller.cpp": {
+      "functions": [],
+      "includes": [
+        "hmi/dual_encoder_controller.h",
+        "algorithm",
+        "constants.h",
+        "globals.h",
+        "usb_cdc_config.h",
+        "palettes/palette_luts_api.h",
+        "debug/debug_manager.h"
+      ],
+      "incoming": 0,
+      "outgoing": 7,
+      "path": "src/hmi/dual_encoder_controller.cpp",
+      "risk_score": 7,
+      "symbols": []
+    },
+    "src/hmi/dual_encoder_controller.h": {
+      "functions": [],
+      "includes": [
+        "array",
+        "hmi/encoder_manager.h"
+      ],
+      "incoming": 2,
+      "outgoing": 2,
+      "path": "src/hmi/dual_encoder_controller.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/hmi/encoder_channel.cpp": {
+      "functions": [],
+      "includes": [
+        "hmi/encoder_channel.h",
+        "algorithm"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/hmi/encoder_channel.cpp",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/hmi/encoder_channel.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h",
+        "Wire.h",
+        "array",
+        "M5UnitScroll.h",
+        "hmi/encoder_types.h"
+      ],
+      "incoming": 2,
+      "outgoing": 5,
+      "path": "src/hmi/encoder_channel.h",
+      "risk_score": 7,
+      "symbols": []
+    },
+    "src/hmi/encoder_manager.cpp": {
+      "functions": [],
+      "includes": [
+        "hmi/encoder_manager.h",
+        "algorithm"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/hmi/encoder_manager.cpp",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/hmi/encoder_manager.h": {
+      "functions": [],
+      "includes": [
+        "array",
+        "hmi/encoder_channel.h"
+      ],
+      "incoming": 2,
+      "outgoing": 2,
+      "path": "src/hmi/encoder_manager.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/hmi/encoder_types.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h"
+      ],
+      "incoming": 1,
+      "outgoing": 1,
+      "path": "src/hmi/encoder_types.h",
+      "risk_score": 2,
+      "symbols": []
+    },
+    "src/i2s_audio.h": {
+      "functions": [
+        "init_i2s",
+        "acquire_sample_chunk",
+        "calculate_vu"
+      ],
+      "includes": [
+        "driver/i2s.h",
+        "audio_raw_state.h",
+        "audio_processed_state.h",
+        "debug/debug_manager.h"
+      ],
+      "incoming": 1,
+      "outgoing": 4,
+      "path": "src/i2s_audio.h",
+      "risk_score": 7,
+      "symbols": [
+        "i2s_config",
+        "pin_config"
+      ]
+    },
+    "src/knobs.h": {
+      "functions": [
+        "avg_read",
+        "check_knobs"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/knobs.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/led_color_debug.h": {
+      "functions": [
+        "init_led_color_debug",
+        "calculate_hsv_approximation",
+        "detect_color_corruption",
+        "analyze_led_color_detailed",
+        "debug_led_color_quick",
+        "print_led_color_stats",
+        "reset_led_color_stats",
+        "set_led_debug_verbose",
+        "set_led_debug_interval",
+        "toggle_led_debug_palette_tracking",
+        "debug_current_led_state",
+        "init_led_color_debug",
+        "analyze_led_color_detailed",
+        "debug_led_color_quick",
+        "print_led_color_stats",
+        "reset_led_color_stats",
+        "set_led_debug_verbose",
+        "set_led_debug_interval",
+        "toggle_led_debug_palette_tracking",
+        "debug_current_led_state"
+      ],
+      "includes": [
+        "Arduino.h",
+        "FastLED.h",
+        "globals.h",
+        "palettes/palettes_bridge.h"
+      ],
+      "incoming": 1,
+      "outgoing": 4,
+      "path": "src/led_color_debug.h",
+      "risk_score": 5,
+      "symbols": []
+    },
+    "src/led_utilities.h": {
+      "functions": [
+        "fmod_fixed",
+        "fmax_fixed",
+        "fmin_fixed",
+        "log_pipeline_addresses",
+        "interpolate_hue",
+        "desaturate",
+        "hsv",
+        "clip_led_values",
+        "reverse_leds",
+        "run_sweet_spot",
+        "lerp_led_NEW",
+        "lerp_led_16",
+        "apply_brightness",
+        "quantize_color",
+        "apply_incandescent_filter",
+        "set_dot_position",
+        "draw_line",
+        "draw_dot",
+        "render_photons_graph",
+        "render_chroma_graph",
+        "render_mood_graph",
+        "transition_ui_mask_to_height",
+        "render_noise_cal",
+        "render_ui",
+        "init_lerp_params",
+        "scale_to_strip",
+        "show_leds",
+        "init_leds",
+        "blocking_flash",
+        "clear_all_led_buffers",
+        "scale_image_to_half",
+        "unmirror",
+        "shift_leds_up",
+        "shift_leds_down",
+        "mirror_image_downwards",
+        "intro_animation",
+        "run_transition_fade",
+        "apply_contrast_float",
+        "apply_contrast_fixed",
+        "apply_contrast",
+        "render_bulb_cover",
+        "force_saturation",
+        "force_hue",
+        "blend_buffers",
+        "apply_prism_effect",
+        "clear_leds",
+        "process_color_shift",
+        "make_smooth_chromagram",
+        "draw_sprite",
+        "force_saturation_16",
+        "adjust_hue_and_saturation",
+        "init_secondary_leds",
+        "scale_to_secondary_strip",
+        "apply_brightness_secondary",
+        "show_secondary_leds",
+        "apply_enhanced_visuals",
+        "quantize_color_secondary"
+      ],
+      "includes": [
+        "Arduino.h",
+        "FastLED.h",
+        "HWCDC.h",
+        "FixedPoints.h",
+        "FixedPointsCommon.h",
+        "FixedPoints/Utils.h",
+        "math.h",
+        "palettes/safety_palettes.h",
+        "palettes/palettes_bridge.h",
+        "debug/debug_manager.h",
+        "debug/performance_monitor.h",
+        "led_color_debug.h",
+        "globals.h",
+        "frame_sync.h",
+        "performance_optimized_trace.h",
+        "constants.h",
+        "stdint.h"
+      ],
+      "incoming": 2,
+      "outgoing": 17,
+      "path": "src/led_utilities.h",
+      "risk_score": 19,
+      "symbols": []
+    },
+    "src/lightshow_modes.h": {
+      "functions": [
+        "cache_frame_config",
+        "get_smooth_spectrogram",
+        "calc_chromagram_color",
+        "avg_bins",
+        "test_mode",
+        "light_mode_gdft",
+        "light_mode_vu_dot",
+        "light_mode_kaleidoscope",
+        "light_mode_chromagram_gradient",
+        "light_mode_chromagram_dots",
+        "light_mode_bloom",
+        "light_mode_quantum_collapse",
+        "light_mode_waveform"
+      ],
+      "includes": [
+        "Arduino.h",
+        "FastLED.h",
+        "FixedPoints.h",
+        "FixedPointsCommon.h",
+        "constants.h",
+        "globals.h",
+        "led_utilities.h",
+        "palettes/palettes_bridge.h",
+        "palettes/palettes_bridge.h",
+        "palettes/palette_luts_api.h"
+      ],
+      "incoming": 1,
+      "outgoing": 10,
+      "path": "src/lightshow_modes.h",
+      "risk_score": 11,
+      "symbols": []
+    },
+    "src/main.cpp": {
+      "functions": [
+        "setup",
+        "main_loop_thread",
+        "main_loop_core0",
+        "loop",
+        "led_thread"
+      ],
+      "includes": [
+        "WiFi.h",
+        "esp_now.h",
+        "esp_random.h",
+        "FastLED.h",
+        "FS.h",
+        "LittleFS.h",
+        "Ticker.h",
+        "USB.h",
+        "FirmwareMSC.h",
+        "FixedPoints.h",
+        "FixedPointsCommon.h",
+        "Wire.h",
+        "esp_task_wdt.h",
+        "esp_pm.h",
+        "sb_strings.h",
+        "user_config.h",
+        "constants.h",
+        "globals.h",
+        "frame_sync.h",
+        "presets.h",
+        "bridge_fs.h",
+        "utilities.h",
+        "debug/performance_monitor.h",
+        "debug/debug_manager.h",
+        "performance_optimized_trace.h",
+        "i2s_audio.h",
+        "led_utilities.h",
+        "noise_cal.h",
+        "p2p.h",
+        "buttons.h",
+        "knobs.h",
+        "serial_menu.h",
+        "audio_raw_state.h",
+        "audio_processed_state.h",
+        "system.h",
+        "GDFT.h",
+        "lightshow_modes.h",
+        "debug/palette_debug.h",
+        "palettes/palette_luts_api.h",
+        "hmi/dual_encoder_controller.h",
+        "test_audio_diagnostics.h"
+      ],
+      "incoming": 0,
+      "outgoing": 41,
+      "path": "src/main.cpp",
+      "risk_score": 48,
+      "symbols": [
+        "benchmark_running",
+        "benchmark_start_time",
+        "system_fps_sum",
+        "led_fps_sum",
+        "benchmark_sample_count",
+        "last_frame_us",
+        "main_loop_task"
+      ]
+    },
+    "src/noise_cal.h": {
+      "functions": [
+        "start_noise_cal",
+        "clear_noise_cal"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/noise_cal.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/p2p.h": {
+      "functions": [
+        "print_mac",
+        "sync_settings",
+        "identify_main_unit",
+        "propagate_noise_cal",
+        "propagate_noise_reset",
+        "on_data_tx",
+        "on_data_rx"
+      ],
+      "includes": [
+        "WiFi.h"
+      ],
+      "incoming": 1,
+      "outgoing": 1,
+      "path": "src/p2p.h",
+      "risk_score": 4,
+      "symbols": [
+        "broadcast_address",
+        "flashing_flag"
+      ]
+    },
+    "src/palettes/FastLED_Palettes.cpp": {
+      "functions": [],
+      "includes": [
+        "FastLED_Palettes.h"
+      ],
+      "incoming": 0,
+      "outgoing": 1,
+      "path": "src/palettes/FastLED_Palettes.cpp",
+      "risk_score": 4,
+      "symbols": [
+        "gGradientPalettes",
+        "gGradientPaletteCount",
+        "paletteNames"
+      ]
+    },
+    "src/palettes/FastLED_Palettes.h": {
+      "functions": [],
+      "includes": [
+        "FastLED.h"
+      ],
+      "incoming": 2,
+      "outgoing": 1,
+      "path": "src/palettes/FastLED_Palettes.h",
+      "risk_score": 3,
+      "symbols": []
+    },
+    "src/palettes/Palettes_Crameri.h": {
+      "functions": [],
+      "includes": [
+        "stdint.h",
+        "FastLED.h"
+      ],
+      "incoming": 0,
+      "outgoing": 2,
+      "path": "src/palettes/Palettes_Crameri.h",
+      "risk_score": 8,
+      "symbols": [
+        "gCrameriPalettes",
+        "gCrameriPaletteCount",
+        "CrameriPaletteNames",
+        "crameri_palette_avg_Y",
+        "crameri_palette_flags",
+        "crameri_palette_max_brightness"
+      ]
+    },
+    "src/palettes/palette_luts.cpp": {
+      "functions": [
+        "build_palette_lut",
+        "init_palette_luts",
+        "ensure_palettes_initialised"
+      ],
+      "includes": [
+        "Arduino.h",
+        "FastLED.h",
+        "math.h",
+        "string.h",
+        "algorithm",
+        "../constants.h",
+        "FastLED_Palettes.h",
+        "palette_luts_api.h"
+      ],
+      "incoming": 0,
+      "outgoing": 8,
+      "path": "src/palettes/palette_luts.cpp",
+      "risk_score": 9,
+      "symbols": [
+        "LED_CALIBRATED_COUNT"
+      ]
+    },
+    "src/palettes/palette_luts_api.h": {
+      "functions": [],
+      "includes": [
+        "stdint.h",
+        "FastLED.h"
+      ],
+      "incoming": 7,
+      "outgoing": 2,
+      "path": "src/palettes/palette_luts_api.h",
+      "risk_score": 9,
+      "symbols": []
+    },
+    "src/palettes/palette_metadata.h": {
+      "functions": [
+        "get_crameri_palette_names"
+      ],
+      "includes": [
+        "stdint.h"
+      ],
+      "incoming": 1,
+      "outgoing": 1,
+      "path": "src/palettes/palette_metadata.h",
+      "risk_score": 3,
+      "symbols": [
+        "CRAMERI_PALETTE_COUNT"
+      ]
+    },
+    "src/palettes/palette_profiler.cpp": {
+      "functions": [
+        "initialize_palette_profiles",
+        "debug_profile_current_palette"
+      ],
+      "includes": [
+        "palette_profiler.h",
+        "palette_luts_api.h",
+        "palette_metadata.h",
+        "FastLED.h"
+      ],
+      "incoming": 0,
+      "outgoing": 4,
+      "path": "src/palettes/palette_profiler.cpp",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/palettes/palette_profiler.h": {
+      "functions": [
+        "profile_palette",
+        "get_current_palette_profile",
+        "is_near_white",
+        "apply_chromatic_guard"
+      ],
+      "includes": [
+        "Arduino.h",
+        "../constants.h",
+        "../globals.h",
+        "algorithm",
+        "cmath"
+      ],
+      "incoming": 1,
+      "outgoing": 5,
+      "path": "src/palettes/palette_profiler.h",
+      "risk_score": 6,
+      "symbols": []
+    },
+    "src/palettes/palettes_bridge.h": {
+      "functions": [
+        "byte01",
+        "hsv_or_palette",
+        "get_current_palette_name"
+      ],
+      "includes": [
+        "FastLED.h",
+        "../globals.h",
+        "palette_luts_api.h"
+      ],
+      "incoming": 3,
+      "outgoing": 3,
+      "path": "src/palettes/palettes_bridge.h",
+      "risk_score": 6,
+      "symbols": []
+    },
+    "src/palettes/safety_palettes.h": {
+      "functions": [
+        "led_index_valid",
+        "get_led16_or_black",
+        "set_led16_safe"
+      ],
+      "includes": [
+        "Arduino.h",
+        "../constants.h",
+        "../globals.h"
+      ],
+      "incoming": 1,
+      "outgoing": 3,
+      "path": "src/palettes/safety_palettes.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/palettes_bridge.h": {
+      "functions": [],
+      "includes": [
+        "constants.h",
+        "globals.h",
+        "safety_palettes.h"
+      ],
+      "incoming": 0,
+      "outgoing": 3,
+      "path": "src/palettes_bridge.h",
+      "risk_score": 3,
+      "symbols": []
+    },
+    "src/presets.h": {
+      "functions": [
+        "set_preset"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/presets.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/safety_palettes.h": {
+      "functions": [
+        "led_index_valid",
+        "get_led16_or_black",
+        "set_led16_safe"
+      ],
+      "includes": [
+        "Arduino.h",
+        "constants.h",
+        "globals.h"
+      ],
+      "incoming": 1,
+      "outgoing": 3,
+      "path": "src/safety_palettes.h",
+      "risk_score": 4,
+      "symbols": []
+    },
+    "src/sb_strings.h": {
+      "functions": [],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/sb_strings.h",
+      "risk_score": 3,
+      "symbols": [
+        "notes_chromatic",
+        "sharps"
+      ]
+    },
+    "src/serial_menu.h": {
+      "functions": [
+        "tx_begin",
+        "ack",
+        "bad_command",
+        "stop_streams",
+        "init_serial",
+        "dump_info",
+        "parse_command",
+        "check_serial"
+      ],
+      "includes": [
+        "debug/performance_monitor.h",
+        "debug/debug_manager.h"
+      ],
+      "incoming": 1,
+      "outgoing": 2,
+      "path": "src/serial_menu.h",
+      "risk_score": 4,
+      "symbols": [
+        "benchmark_duration"
+      ]
+    },
+    "src/system.h": {
+      "functions": [
+        "reboot",
+        "start_timing",
+        "end_timing",
+        "check_current_function",
+        "usb_event_callback",
+        "enable_usb_update_mode",
+        "init_usb",
+        "init_sweet_spot",
+        "generate_a_weights",
+        "generate_window_lookup",
+        "precompute_goertzel_constants",
+        "debug_function_timing",
+        "set_mode_name",
+        "init_system",
+        "log_fps",
+        "check_settings"
+      ],
+      "includes": [
+        "globals.h",
+        "esp_pm.h"
+      ],
+      "incoming": 1,
+      "outgoing": 2,
+      "path": "src/system.h",
+      "risk_score": 4,
+      "symbols": [
+        "timing_start"
+      ]
+    },
+    "src/test_audio_diagnostics.h": {
+      "functions": [
+        "diagnose_audio_pipeline",
+        "diagnose_dc_offset",
+        "generate_test_tone",
+        "test_frequency_detection"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/test_audio_diagnostics.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/usb_cdc_config.h": {
+      "functions": [],
+      "includes": [
+        "Arduino.h",
+        "USB.h",
+        "USBCDC.h"
+      ],
+      "incoming": 2,
+      "outgoing": 3,
+      "path": "src/usb_cdc_config.h",
+      "risk_score": 5,
+      "symbols": []
+    },
+    "src/user_config.h": {
+      "functions": [],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/user_config.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/utilities.h": {
+      "functions": [
+        "interpolate",
+        "bytes_to_hex_string",
+        "print_chip_id",
+        "blur_array",
+        "low_pass_filter",
+        "low_pass_array",
+        "low_pass_filter_fixed",
+        "low_pass_array_fixed",
+        "random_float",
+        "mood_scale",
+        "fabs_fixed",
+        "fmin_fixed",
+        "fmax_fixed",
+        "fmod_fixed",
+        "clip_float"
+      ],
+      "includes": [],
+      "incoming": 1,
+      "outgoing": 0,
+      "path": "src/utilities.h",
+      "risk_score": 1,
+      "symbols": []
+    },
+    "src/waveform_enhancement_debug.h": {
+      "functions": [
+        "validate_color_integrity",
+        "apply_safe_subpixel_enhancement",
+        "apply_safe_frequency_trails",
+        "process_user_feedback_integration",
+        "run_enhancement_validation_sequence",
+        "apply_safe_subpixel_enhancement",
+        "apply_safe_frequency_trails",
+        "process_user_feedback_integration",
+        "run_enhancement_validation_sequence"
+      ],
+      "includes": [
+        "Arduino.h",
+        "FastLED.h",
+        "FixedPoints.h",
+        "constants.h"
+      ],
+      "incoming": 0,
+      "outgoing": 4,
+      "path": "src/waveform_enhancement_debug.h",
+      "risk_score": 4,
+      "symbols": []
+    }
+  },
+  "odr_conflicts": {}
+}
