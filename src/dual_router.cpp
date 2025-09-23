@@ -27,7 +27,6 @@ void router_fsm_tick(const SQ15x16* novelty_curve,
   // Throttled debug
   if (now_ms - g_router_dbg.last_log_ms > 4000) {
     g_router_dbg.last_log_ms = now_ms;
-    USBSerial.println("[ROUTER] tick placeholder – implement FSM");
+    // Placeholder log suppressed to avoid USBSerial dependency in this TU
   }
 }
-

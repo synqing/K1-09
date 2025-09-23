@@ -441,10 +441,17 @@ inline void light_mode_chromagram_gradient() {
       }
       led_hue = hue1 * (1.0 - fract) + hue2 * fract;
       if (led_hue >= 1.0) led_hue -= 1.0; // Normalize back to 0-1 range
+      if (CONFIG.PALETTE_INDEX == 0) {
+        led_hue += frame_config.coordinator_hue_detune;
+        while (led_hue < 0.0) led_hue += 1.0;
+        while (led_hue >= 1.0) led_hue -= 1.0;
+      }
 
     } else {
       // Use CONFIG.CHROMA directly instead of the potentially stale global chroma_val
-      led_hue = CONFIG.CHROMA + hue_position + ((sqrt(float(note_magnitude)) * SQ15x16(0.05)) + (prog * SQ15x16(0.10)) * hue_shifting_mix);
+      led_hue = CONFIG.CHROMA + hue_position + frame_config.coordinator_hue_detune + ((sqrt(float(note_magnitude)) * SQ15x16(0.05)) + (prog * SQ15x16(0.10)) * hue_shifting_mix);
+      while (led_hue < 0.0) led_hue += 1.0;
+      while (led_hue >= 1.0) led_hue -= 1.0;
     }
 
     CRGB16 col = hsv_or_palette(led_hue, CONFIG.SATURATION, note_magnitude * note_magnitude);
@@ -469,9 +476,16 @@ inline void light_mode_chromagram_dots() {
     SQ15x16 led_hue;
     if (chromatic_mode == true) {
       led_hue = note_colors[i];
+      if (CONFIG.PALETTE_INDEX == 0) {
+        led_hue += frame_config.coordinator_hue_detune;
+        while (led_hue < 0.0) led_hue += 1.0;
+        while (led_hue >= 1.0) led_hue -= 1.0;
+      }
     } else {
       // Use CONFIG.CHROMA directly
-      led_hue = CONFIG.CHROMA + hue_position + (sqrt(float(1.0)) * SQ15x16(0.05));
+      led_hue = CONFIG.CHROMA + hue_position + frame_config.coordinator_hue_detune + (sqrt(float(1.0)) * SQ15x16(0.05));
+      while (led_hue < 0.0) led_hue += 1.0;
+      while (led_hue >= 1.0) led_hue -= 1.0;
     }
 
     SQ15x16 magnitude = chromagram_smooth[i] * 1.0;
