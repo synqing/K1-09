@@ -43,6 +43,39 @@ enum : uint8_t {
 // --------------------------- Gradient palette definitions -----------------------
 // (Your exact definitions verbatim)
 
+#ifndef SB_PALETTES_IMPL
+DECLARE_GRADIENT_PALETTE(Crameri_Vik_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Tokyo_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Roma_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Oleron_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Lisbon_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_LaJolla_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Hawaii_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Devon_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Cork_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Broc_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Berlin_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Bamako_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Acton_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Batlow_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Bilbao_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Buda_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Davos_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_GrayC_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Imola_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_LaPaz_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Nuuk_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Oslo_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Tofino_gp);
+DECLARE_GRADIENT_PALETTE(Crameri_Turku_gp);
+extern const TProgmemRGBGradientPaletteRef gCrameriPalettes[24];
+extern const uint8_t gCrameriPaletteCount;
+extern const char* const CrameriPaletteNames[24];
+extern const uint8_t crameri_palette_avg_Y[24];
+extern const uint8_t crameri_palette_flags[24];
+extern const uint8_t crameri_palette_max_brightness[24];
+
+#else
 DEFINE_GRADIENT_PALETTE(Crameri_Vik_gp){
   0,   3, 43, 113,
   32,  11, 95, 146,
@@ -433,6 +466,10 @@ constexpr uint8_t crameri_palette_max_brightness[] = {
   /* 23 Turku   */ 230
 };
 
+
+#endif // SB_PALETTES_IMPL
+
+#ifdef SB_PALETTES_IMPL
 // ------------------------------- Compile-time checks ----------------------------
 
 static_assert(
@@ -458,5 +495,8 @@ static_assert(
   (sizeof(crameri_palette_max_brightness) / sizeof(crameri_palette_max_brightness[0])),
   "crameri_palette_max_brightness[] must match gCrameriPalettes[] size!"
 );
+
+
+#endif // SB_PALETTES_IMPL
 
 #endif // SPECTRASYNC_PALLETS_CRAMERI_H
