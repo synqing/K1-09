@@ -32,9 +32,9 @@ struct LEDColorStats {
 };
 
 #ifndef SB_LED_COLOR_DEBUG_IMPL
-extern static LEDColorStats led_color_stats;
+extern LEDColorStats led_color_stats;
 #else
-static LEDColorStats led_color_stats = {0};
+LEDColorStats led_color_stats = {0};
 #endif
 
 // Enhanced color analysis with audio correlation

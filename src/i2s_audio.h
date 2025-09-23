@@ -13,6 +13,9 @@ extern SensoryBridge::Audio::AudioRawState audio_raw_state;
 // Phase 2B: Access to AudioProcessedState instance for migration
 extern SensoryBridge::Audio::AudioProcessedState audio_processed_state;
 
+#ifndef SB_I2S_AUDIO_IMPL
+extern const i2s_config_t i2s_config;
+#else
 const i2s_config_t i2s_config = {
   .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
   .sample_rate = CONFIG.SAMPLE_RATE,
@@ -22,14 +25,22 @@ const i2s_config_t i2s_config = {
   .dma_buf_count = 8,  // Increased from 2 for better double-buffering
   .dma_buf_len = CONFIG.SAMPLES_PER_CHUNK * 2,  // Larger buffers reduce interrupt overhead
 };
+#endif
 
+#ifndef SB_I2S_AUDIO_IMPL
+extern const i2s_pin_config_t pin_config;
+#else
 const i2s_pin_config_t pin_config = {
   .bck_io_num = I2S_BCLK_PIN,
   .ws_io_num = I2S_LRCLK_PIN,
   .data_out_num = -1,  // not used (only for outputs)
   .data_in_num = I2S_DIN_PIN
 };
+#endif
 
+#ifndef SB_I2S_AUDIO_IMPL
+void init_i2s();
+#else
 void init_i2s() {
   esp_err_t result = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
   USBSerial.print("INIT I2S: ");
@@ -45,7 +56,12 @@ void init_i2s() {
   USBSerial.print("I2S SET PINS: ");
   USBSerial.println(result == ESP_OK ? SB_PASS : SB_FAIL);
 }
+#endif
 
+
+#ifndef SB_I2S_AUDIO_IMPL
+void acquire_sample_chunk(uint32_t t_now);
+#else
 void acquire_sample_chunk(uint32_t t_now) {
   static int8_t sweet_spot_state_last = 0;
   static bool silence_temp = false;
@@ -346,7 +362,12 @@ void acquire_sample_chunk(uint32_t t_now) {
     }
   }
 }
+#endif
 
+
+#ifndef SB_I2S_AUDIO_IMPL
+void calculate_vu();
+#else
 void calculate_vu() {
   /*
     Calculates perceived audio loudness or Volume Unit (VU). Uses root mean square (RMS) method 
@@ -435,3 +456,5 @@ void calculate_vu() {
 
   audio_vu_level_average = (audio_vu_level + audio_vu_level_last) / (2.0);
 }
+#endif
+
