@@ -1300,6 +1300,12 @@ inline void light_mode_quantum_collapse() {
     // Audio affects saturation slightly
     saturation *= SQ15x16(0.9 + float(audio_vu_level) * 0.2);
     
+    // Apply small coordinator detune in HSV mode
+    if (CONFIG.PALETTE_INDEX == 0) {
+      field_hue += frame_config.coordinator_hue_detune;
+      while (field_hue < 0.0) field_hue += 1.0;
+      while (field_hue >= 1.0) field_hue -= 1.0;
+    }
     // Create final LED color
     leds_16[i] = hsv_or_palette(field_hue, saturation, brightness);
   }
@@ -1337,6 +1343,12 @@ inline void light_mode_quantum_collapse() {
       SQ15x16 particle_brightness = SQ15x16(0.7) + energy_factor * SQ15x16(0.3);
       particle_brightness *= pulse;
       
+      // Coordinator detune for particles in HSV mode
+      if (CONFIG.PALETTE_INDEX == 0) {
+        particle_hue += frame_config.coordinator_hue_detune;
+        while (particle_hue < 0.0) particle_hue += 1.0;
+        while (particle_hue >= 1.0) particle_hue -= 1.0;
+      }
       // Create particle color
       CRGB16 particle_color = hsv_or_palette(particle_hue, 
                                  CONFIG.SATURATION * SQ15x16(0.95), 
@@ -1448,7 +1460,13 @@ inline void light_mode_waveform(CRGB16* leds_previous, CRGB16& last_color) { // 
       if (CONFIG.PALETTE_INDEX > 0 && color_brightness < 0.2) {
         color_brightness = SQ15x16(0.2); // 20% minimum for palettes
       }
-      CRGB16 note_col = hsv_or_palette(SQ15x16(prog), CONFIG.SATURATION, color_brightness);
+      SQ15x16 note_h = SQ15x16(prog);
+      if (CONFIG.PALETTE_INDEX == 0) {
+        note_h += frame_config.coordinator_hue_detune;
+        while (note_h < 0.0) note_h += 1.0;
+        while (note_h >= 1.0) note_h -= 1.0;
+      }
+      CRGB16 note_col = hsv_or_palette(note_h, CONFIG.SATURATION, color_brightness);
       current_sum_color.r += note_col.r;
       current_sum_color.g += note_col.g;
       current_sum_color.b += note_col.b;
@@ -1498,8 +1516,10 @@ inline void light_mode_waveform(CRGB16* leds_previous, CRGB16& last_color) { // 
       // Palette mode: Use neutral hue to preserve palette colors
       effective_hue = hue_position;  // Only use natural hue shifting, no CHROMA
     } else {
-      // HSV mode: Use full chroma control as intended
-      effective_hue = chroma_val + hue_position;
+      // HSV mode: Use full chroma control as intended + coordinator detune
+      effective_hue = chroma_val + hue_position + frame_config.coordinator_hue_detune;
+      while (effective_hue < 0.0) effective_hue += 1.0;
+      while (effective_hue >= 1.0) effective_hue -= 1.0;
     }
     current_sum_color = hsv_or_palette(effective_hue, CONFIG.SATURATION, color_brightness);
   }
