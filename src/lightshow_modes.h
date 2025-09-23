@@ -52,6 +52,13 @@ inline void test_mode() {
 
 // Default mode!
 inline void light_mode_gdft() {
+  // Throttled debug: confirm coordinator detune is being consumed
+  static uint32_t last_detune_log_ms = 0;
+  uint32_t now_ms_detune = millis();
+  if (debug_mode && (now_ms_detune - last_detune_log_ms) > 4000) {
+    last_detune_log_ms = now_ms_detune;
+    USBSerial.printf("[DETUNE] GDFT det=%.3f\n", float(frame_config.coordinator_hue_detune));
+  }
   // Calculate frequency data for the first half of the strip
   for (uint16_t i = 0; i < (NATIVE_RESOLUTION / 2); i++) {
     // Map the 64 frequency bins across the first half (NATIVE_RESOLUTION / 2 LEDs)
@@ -321,6 +328,21 @@ inline void light_mode_kaleidoscope() {
     SQ15x16 r_val = inoise16(i_scaled * 0.5 + y_pos_r) / 65536.0;
     SQ15x16 g_val = inoise16(i_scaled * 1.0 + y_pos_g) / 65536.0;
     SQ15x16 b_val = inoise16(i_scaled * 1.5 + y_pos_b) / 65536.0;
+
+    // Apply a small hue rotation derived from coordinator detune (safe, no buffer reorder)
+    // r' = r + k*(b-r); g' = g + k*(r-g); b' = b + k*(g-b)
+    // where k in roughly [-0.08..0.08]
+    SQ15x16 k = frame_config.coordinator_hue_detune;
+    if (k != SQ15x16(0.0)) {
+      SQ15x16 r_new = r_val + k * (b_val - r_val);
+      SQ15x16 g_new = g_val + k * (r_val - g_val);
+      SQ15x16 b_new = b_val + k * (g_val - b_val);
+      // Clamp
+      if (r_new < 0.0) r_new = 0.0; if (r_new > 1.0) r_new = 1.0;
+      if (g_new < 0.0) g_new = 0.0; if (g_new > 1.0) g_new = 1.0;
+      if (b_new < 0.0) b_new = 0.0; if (b_new > 1.0) b_new = 1.0;
+      r_val = r_new; g_val = g_new; b_val = b_new;
+    }
 
     if (r_val > 1.0) { r_val = 1.0; };
     if (g_val > 1.0) { g_val = 1.0; };
