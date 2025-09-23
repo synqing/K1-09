@@ -1,5 +1,9 @@
+#pragma once
 extern void propagate_noise_reset();
 
+#ifndef SB_NOISE_CAL_IMPL
+void start_noise_cal();
+#else
 void start_noise_cal() {
   // EMERGENCY FIX PRESERVATION: Store critical AGC parameters before reset
   float preserved_vu_floor = CONFIG.VU_LEVEL_FLOOR;
@@ -44,7 +48,12 @@ void start_noise_cal() {
   }
   USBSerial.println("STARTING NOISE CAL (with AGC preservation)");
 }
+#endif
 
+
+#ifndef SB_NOISE_CAL_IMPL
+void clear_noise_cal();
+#else
 void clear_noise_cal() {
   USBSerial.println("DEBUG: clear_noise_cal() called - stack trace would be helpful");
   propagate_noise_reset();
@@ -55,3 +64,4 @@ void clear_noise_cal() {
   save_ambient_noise_calibration();
   USBSerial.println("NOISE CAL CLEARED");
 }
+#endif
