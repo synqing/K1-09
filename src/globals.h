@@ -216,6 +216,7 @@ extern SQ15x16 ui_mask_height;
 
 extern CRGB16 *leds_scaled;
 extern CRGB *leds_out;
+extern CRGB g_leds_out_primary_fb[2][160];
 
 extern SQ15x16 hue_shift; // Used in auto color cycling
 
@@ -407,6 +408,17 @@ inline void unlock_leds(){
 extern CRGB16  leds_16_secondary[160];        // Main buffer for secondary strip
 extern CRGB16 *leds_scaled_secondary;         // For scaling to actual LED count
 extern CRGB *leds_out_secondary;              // Final output buffer
+extern CRGB g_leds_out_secondary_fb[2][160];
+
+// Async LED output (double-buffer) control
+// Front/back indices are shared across both channels to keep flips in lockstep
+extern int g_led_front_idx;
+extern int g_led_back_idx;
+
+// FastLED controller handles (captured at init)
+class CLEDController; // forward decl from FastLED
+extern CLEDController* g_primary_ctrl;
+extern CLEDController* g_secondary_ctrl;
 
 // Secondary strip configuration - constants defined in constants.h as #defines for FastLED templates
 extern uint8_t SECONDARY_LIGHTSHOW_MODE; // Secondary channel: Waveform mode

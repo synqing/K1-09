@@ -125,6 +125,8 @@ void setup() {
     .light_sleep_enable = false
   };
   esp_pm_configure(&pm_config);
+  // Task Watchdog: 2-second timeout, panic on trigger
+  esp_task_wdt_init(2, true);
   
   init_system();  // (system.h) Initialize all hardware and arrays
 
@@ -334,6 +336,8 @@ void main_loop_core0() {
 
   // Watches the rate of change in the Goertzel bins to guide decisions for auto-color shifting
   calculate_novelty(t_now);
+  // WDT feed after Phase B (audio)
+  esp_task_wdt_reset();
 
   // COLOR SHIFT PROCESSING [2025-09-20] - Simplified logic
   // palettes_bridge.h now handles all palette protection internally

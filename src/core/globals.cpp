@@ -155,9 +155,9 @@ SQ15x16 ui_mask_height = 0.0;
 
 // Static storage for LED buffers (primary strip)
 static CRGB16 g_leds_scaled_primary[160];
-static CRGB   g_leds_out_primary[160];
+CRGB   g_leds_out_primary_fb[2][160];
 CRGB16 *leds_scaled = g_leds_scaled_primary;
-CRGB *leds_out = g_leds_out_primary;
+CRGB *leds_out = g_leds_out_primary_fb[1]; // start writing to back buffer
 
 SQ15x16 hue_shift = 0.0; // Used in auto color cycling
 
@@ -308,9 +308,9 @@ float last_sample = 0;
 CRGB16  leds_16_secondary[160];        // Main buffer for secondary strip
 // Static storage for LED buffers (secondary strip)
 static CRGB16 g_leds_scaled_secondary[160];
-static CRGB   g_leds_out_secondary[160];
+CRGB   g_leds_out_secondary_fb[2][160];
 CRGB16 *leds_scaled_secondary = g_leds_scaled_secondary;         // For scaling to actual LED count
-CRGB *leds_out_secondary = g_leds_out_secondary;              // Final output buffer
+CRGB *leds_out_secondary = g_leds_out_secondary_fb[1];           // write to back buffer initially
 
 // Secondary strip configuration - constants moved to constants.h as #defines for FastLED templates
 uint8_t SECONDARY_LIGHTSHOW_MODE = LIGHT_MODE_WAVEFORM; // Secondary channel: Waveform mode
@@ -368,6 +368,14 @@ CRGB16 incandescent_lookup = {{ 1.0000 }, { 0.4453 }, { 0.1562 }};
 static LerpParams g_led_lerp_params[160];
 LerpParams* led_lerp_params = g_led_lerp_params;
 bool lerp_params_initialized = false;
+
+// Front/back indices for double-buffered output (shared across channels)
+int g_led_front_idx = 0;
+int g_led_back_idx = 1;
+
+// FastLED controller handles
+CLEDController* g_primary_ctrl = nullptr;
+CLEDController* g_secondary_ctrl = nullptr;
 
 // PALETTE INTEGRATION [2025-09-20] - Phase 2 minimal state management
 // REMOVED: g_current_palette_index - CONFIG.PALETTE_INDEX is now single source of truth

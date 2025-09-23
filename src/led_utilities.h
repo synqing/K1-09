@@ -1026,6 +1026,7 @@ inline void show_leds() {
     stage5_dst0_pre = leds_out[0];
   }
 
+  // Quantize into the current back buffer (leds_out points to back)
   quantize_color(CONFIG.TEMPORAL_DITHERING);
   const bool stage5_any = (leds_out != nullptr) ?
       leds_any_nonzero(leds_out, CONFIG.LED_COUNT) : false;
@@ -1100,8 +1101,24 @@ inline void show_leds() {
     USBSerial.println();
   }
 
+  // Prepare controllers to transmit from current back buffers
+  if (g_primary_ctrl) {
+    g_primary_ctrl->setLeds((g_leds_out_primary_fb[g_led_back_idx]), CONFIG.LED_COUNT);
+  }
+  if (ENABLE_SECONDARY_LEDS && g_secondary_ctrl) {
+    g_secondary_ctrl->setLeds((g_leds_out_secondary_fb[g_led_back_idx]), SECONDARY_LED_COUNT_CONST);
+  }
   FastLED.setDither(false);
-  FastLED.show(); // This will update both LED strips
+  // FastLED.show() will block only if the previous frame hasn't completed yet;
+  // otherwise it will arm the current frame for async transmit and return quickly.
+  FastLED.show();
+  // Flip front/back and redirect write pointers to the new back buffers
+  g_led_front_idx ^= 1;
+  g_led_back_idx ^= 1;
+  leds_out = g_leds_out_primary_fb[g_led_back_idx];
+  if (ENABLE_SECONDARY_LEDS) {
+    leds_out_secondary = g_leds_out_secondary_fb[g_led_back_idx];
+  }
 
   // Add inside show_leds() function, just before FastLED.show()
   if (debug_mode && (millis() % 5000 == 0)) {
@@ -1145,34 +1162,34 @@ inline void init_leds() {
 
   if (CONFIG.LED_TYPE == LED_NEOPIXEL) {
     if (CONFIG.LED_COLOR_ORDER == RGB) {
-      FastLED.addLeds<WS2812B, LED_DATA_PIN, RGB>(leds_out, CONFIG.LED_COUNT);
+      g_primary_ctrl = &FastLED.addLeds<WS2812B, LED_DATA_PIN, RGB>(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT);
     } else if (CONFIG.LED_COLOR_ORDER == GRB) {
-      FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(leds_out, CONFIG.LED_COUNT);
+      g_primary_ctrl = &FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT);
     } else if (CONFIG.LED_COLOR_ORDER == BGR) {
-      FastLED.addLeds<WS2812B, LED_DATA_PIN, BGR>(leds_out, CONFIG.LED_COUNT);
+      g_primary_ctrl = &FastLED.addLeds<WS2812B, LED_DATA_PIN, BGR>(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT);
     }
   }
 
   else if (CONFIG.LED_TYPE == LED_NEOPIXEL_X2) {
     if (CONFIG.LED_COLOR_ORDER == RGB) {
-      FastLED.addLeds< WS2812B, LED_DATA_PIN,  RGB >(leds_out, 0, CONFIG.LED_COUNT / 2);
-      FastLED.addLeds< WS2812B, LED_CLOCK_PIN, RGB >(leds_out, CONFIG.LED_COUNT / 2, CONFIG.LED_COUNT / 2);
+      g_primary_ctrl = &FastLED.addLeds< WS2812B, LED_DATA_PIN,  RGB >(g_leds_out_primary_fb[g_led_front_idx], 0, CONFIG.LED_COUNT / 2);
+      FastLED.addLeds< WS2812B, LED_CLOCK_PIN, RGB >(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT / 2, CONFIG.LED_COUNT / 2);
     } else if (CONFIG.LED_COLOR_ORDER == GRB) {
-      FastLED.addLeds< WS2812B, LED_DATA_PIN,  GRB >(leds_out, 0, CONFIG.LED_COUNT / 2);
-      FastLED.addLeds< WS2812B, LED_CLOCK_PIN, GRB >(leds_out, CONFIG.LED_COUNT / 2, CONFIG.LED_COUNT / 2);
+      g_primary_ctrl = &FastLED.addLeds< WS2812B, LED_DATA_PIN,  GRB >(g_leds_out_primary_fb[g_led_front_idx], 0, CONFIG.LED_COUNT / 2);
+      FastLED.addLeds< WS2812B, LED_CLOCK_PIN, GRB >(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT / 2, CONFIG.LED_COUNT / 2);
     } else if (CONFIG.LED_COLOR_ORDER == BGR) {
-      FastLED.addLeds< WS2812B, LED_DATA_PIN,  BGR >(leds_out, 0, CONFIG.LED_COUNT / 2);
-      FastLED.addLeds< WS2812B, LED_CLOCK_PIN, BGR >(leds_out, CONFIG.LED_COUNT / 2, CONFIG.LED_COUNT / 2);
+      g_primary_ctrl = &FastLED.addLeds< WS2812B, LED_DATA_PIN,  BGR >(g_leds_out_primary_fb[g_led_front_idx], 0, CONFIG.LED_COUNT / 2);
+      FastLED.addLeds< WS2812B, LED_CLOCK_PIN, BGR >(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT / 2, CONFIG.LED_COUNT / 2);
     }
   }
 
   else if (CONFIG.LED_TYPE == LED_DOTSTAR) {
     if (CONFIG.LED_COLOR_ORDER == RGB) {
-      FastLED.addLeds<DOTSTAR, LED_DATA_PIN, LED_CLOCK_PIN, RGB>(leds_out, CONFIG.LED_COUNT);
+      g_primary_ctrl = &FastLED.addLeds<DOTSTAR, LED_DATA_PIN, LED_CLOCK_PIN, RGB>(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT);
     } else if (CONFIG.LED_COLOR_ORDER == GRB) {
-      FastLED.addLeds<DOTSTAR, LED_DATA_PIN, LED_CLOCK_PIN, GRB>(leds_out, CONFIG.LED_COUNT);
+      g_primary_ctrl = &FastLED.addLeds<DOTSTAR, LED_DATA_PIN, LED_CLOCK_PIN, GRB>(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT);
     } else if (CONFIG.LED_COLOR_ORDER == BGR) {
-      FastLED.addLeds<DOTSTAR, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds_out, CONFIG.LED_COUNT);
+      g_primary_ctrl = &FastLED.addLeds<DOTSTAR, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(g_leds_out_primary_fb[g_led_front_idx], CONFIG.LED_COUNT);
     }
   }
 
@@ -1181,7 +1198,7 @@ inline void init_leds() {
   for (uint16_t x = 0; x < CONFIG.LED_COUNT; x++) {
     leds_out[x] = CRGB(0, 0, 0);
   }
-  FastLED.show();  // Just show the LEDs directly during init instead of calling show_leds()
+  FastLED.show();  // Kick the pipeline once
   delay(100); // Give FastLED time to initialize on S3
 
   leds_started = true;
@@ -1954,7 +1971,7 @@ inline CRGB16 adjust_hue_and_saturation(CRGB16 color, SQ15x16 hue, SQ15x16 satur
 
 inline void init_secondary_leds() {
   // Use #define constants for FastLED template arguments (required for compile-time evaluation)
-  FastLED.addLeds<WS2812B, SECONDARY_LED_DATA_PIN, GRB>(leds_out_secondary, SECONDARY_LED_COUNT_CONST);
+  g_secondary_ctrl = &FastLED.addLeds<WS2812B, SECONDARY_LED_DATA_PIN, GRB>(g_leds_out_secondary_fb[g_led_front_idx], SECONDARY_LED_COUNT_CONST);
   for (uint16_t x = 0; x < SECONDARY_LED_COUNT_CONST; x++) {
     leds_out_secondary[x] = CRGB(0, 0, 0);
   }
