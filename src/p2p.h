@@ -47,6 +47,9 @@ struct SB_COMMAND_IDENTIFY_MAIN {
   uint8_t command_type = COMMAND_IDENTIFY_MAIN;
 };
 
+#ifndef SB_P2P_IMPL
+void print_mac(const uint8_t *mac_addr);
+#else
 void print_mac(const uint8_t *mac_addr) {
   USBSerial.print(mac_addr[0], HEX);
   USBSerial.print(':');
@@ -60,7 +63,12 @@ void print_mac(const uint8_t *mac_addr) {
   USBSerial.print(':');
   USBSerial.print(mac_addr[5], HEX);
 }
+#endif
 
+
+#ifndef SB_P2P_IMPL
+void sync_settings(uint32_t t_now);
+#else
 void sync_settings(uint32_t t_now) {
   SB_COMMAND_SYNC_SETTINGS setting;
 
@@ -74,7 +82,12 @@ void sync_settings(uint32_t t_now) {
   const uint8_t *peer_addr = broadcast_peer.peer_addr;
   esp_now_send(peer_addr, (uint8_t *)&setting, sizeof(SB_COMMAND_SYNC_SETTINGS));
 }
+#endif
 
+
+#ifndef SB_P2P_IMPL
+void identify_main_unit();
+#else
 void identify_main_unit() {
   USBSerial.println("[IDENTIFY MAIN UNIT]");
   SB_COMMAND_IDENTIFY_MAIN identify;
@@ -87,7 +100,12 @@ void identify_main_unit() {
   CRGB16 col = {{ 1.0 }, { 0.0 }, { 0.0 }};
   blocking_flash(col); // We aren't main unit, flash red
 }
+#endif
 
+
+#ifndef SB_P2P_IMPL
+void propagate_noise_cal();
+#else
 void propagate_noise_cal() {
   if (CONFIG.IS_MAIN_UNIT) {
     SB_COMMAND_TRIGGER_NOISE_CAL trigger;
@@ -97,7 +115,12 @@ void propagate_noise_cal() {
     }
   }
 }
+#endif
 
+
+#ifndef SB_P2P_IMPL
+void propagate_noise_reset();
+#else
 void propagate_noise_reset() {
   if (CONFIG.IS_MAIN_UNIT) {
     SB_COMMAND_CLEAR_NOISE_CAL clear;
@@ -107,10 +130,17 @@ void propagate_noise_reset() {
     }
   }
 }
+#endif
 
+
+#ifndef SB_P2P_IMPL
+void on_data_tx(const uint8_t *mac_addr, esp_now_send_status_t status);
+#else
 void on_data_tx(const uint8_t *mac_addr, esp_now_send_status_t status) {
   // nothing
 }
+#endif
+
 
 // ESP32 Arduino Core 3.x compatibility fix
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -175,6 +205,9 @@ void on_data_rx(const uint8_t *mac_addr, const uint8_t *incoming_data, int len) 
   }
 }
 
+#ifndef SB_P2P_IMPL
+void init_p2p();
+#else
 void init_p2p() {
   WiFi.mode(WIFI_MODE_STA);
 
@@ -192,7 +225,12 @@ void init_p2p() {
   USBSerial.print("ESP-NOW ADD BROADCAST PEER: ");
   USBSerial.println(esp_err_to_name(esp_now_add_peer(&broadcast_peer)));
 }
+#endif
 
+
+#ifndef SB_P2P_IMPL
+void run_p2p();
+#else
 void run_p2p() {
   uint32_t t_now = millis();
 
@@ -210,3 +248,5 @@ void run_p2p() {
     blocking_flash(col);
   }
 }
+#endif
+
