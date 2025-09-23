@@ -4,17 +4,30 @@
 
 extern void reboot(); // system.h
 
+#ifndef SB_BRIDGE_FS_IMPL
+void update_config_filename(uint32_t input);
+#else
 void update_config_filename(uint32_t input) {
   snprintf(config_filename, 24, "/CONFIG_%05lu.BIN", input);
 }
+#endif
 
+
+#ifndef SB_BRIDGE_FS_IMPL
+void init_config_defaults();
+#else
 void init_config_defaults() {
   // CONFIG is already initialized with defaults in globals.h
   // This function exists for compatibility
   CONFIG_DEFAULTS = CONFIG;
 }
+#endif
+
 
 // Restore all defaults defined in globals.h by removing saved data and rebooting
+#ifndef SB_BRIDGE_FS_IMPL
+void factory_reset();
+#else
 void factory_reset() {
   lock_leds();
   USBSerial.print("Deleting ");
@@ -36,8 +49,13 @@ void factory_reset() {
 
   reboot();
 }
+#endif
+
 
 // Restore only configuration defaults
+#ifndef SB_BRIDGE_FS_IMPL
+void restore_defaults();
+#else
 void restore_defaults() {
   lock_leds();
   USBSerial.print("Deleting ");
@@ -52,11 +70,20 @@ void restore_defaults() {
 
   reboot();
 }
+#endif
+
 
 // Flag to indicate config needs saving
+#ifndef SB_BRIDGE_FS_IMPL
+extern bool config_save_pending;
+#else
 bool config_save_pending = false;
+#endif
 
 // Save configuration to LittleFS
+#ifndef SB_BRIDGE_FS_IMPL
+void save_config();
+#else
 void save_config() {
   // CRITICAL: Just set a flag - actual save will happen in a safer context
   config_save_pending = true;
@@ -64,8 +91,13 @@ void save_config() {
     USBSerial.println("CONFIG SAVE DEFERRED");
   }
 }
+#endif
+
 
 // Actual file write - call this from main loop when safe
+#ifndef SB_BRIDGE_FS_IMPL
+void do_config_save();
+#else
 void do_config_save() {
   if (!config_save_pending) return;
   
@@ -116,8 +148,13 @@ void do_config_save() {
   
   unlock_leds();
 }
+#endif
+
 
 // Save configuration to LittleFS after delay
+#ifndef SB_BRIDGE_FS_IMPL
+void save_config_delayed();
+#else
 void save_config_delayed() {
   if(debug_mode == true){
     USBSerial.println("CONFIG SAVE QUEUED");
@@ -126,8 +163,13 @@ void save_config_delayed() {
   next_save_time = millis()+10000;
   settings_updated = true;
 }
+#endif
+
 
 // Load configuration from LittleFS
+#ifndef SB_BRIDGE_FS_IMPL
+void load_config();
+#else
 void load_config() {
   lock_leds();
   if (debug_mode) {
@@ -168,8 +210,13 @@ void load_config() {
   }
   unlock_leds();
 }
+#endif
+
 
 // Save noise calibration to LittleFS
+#ifndef SB_BRIDGE_FS_IMPL
+void save_ambient_noise_calibration();
+#else
 void save_ambient_noise_calibration() {
   lock_leds();
   if (debug_mode) {
@@ -215,8 +262,13 @@ void save_ambient_noise_calibration() {
 
   unlock_leds();
 }
+#endif
+
 
 // Load noise calibration from LittleFS
+#ifndef SB_BRIDGE_FS_IMPL
+void load_ambient_noise_calibration();
+#else
 void load_ambient_noise_calibration() {
   lock_leds();
   if (debug_mode) {
@@ -250,8 +302,13 @@ void load_ambient_noise_calibration() {
 
   unlock_leds();
 }
+#endif
+
 
 // Initialize LittleFS
+#ifndef SB_BRIDGE_FS_IMPL
+void init_fs();
+#else
 void init_fs() {
   lock_leds();
   USBSerial.print("INIT FILESYSTEM: ");
@@ -262,3 +319,5 @@ void init_fs() {
   load_config();
   unlock_leds();
 }
+#endif
+
