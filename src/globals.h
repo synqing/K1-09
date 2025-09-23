@@ -238,6 +238,7 @@ extern volatile uint16_t function_id;
 extern volatile uint16_t function_hits[32];
 extern float SYSTEM_FPS;
 extern float LED_FPS;
+extern volatile uint32_t g_flip_violations;
 
 // ------------------------------------------------------------
 // SensorySync P2P network (p2p.h) ----------------------------
@@ -329,6 +330,12 @@ extern SQ15x16 min_silent_level_tracker; // EMERGENCY FIX: Reduced from 65535.0 
 extern const uint8_t spectrogram_history_length;
 extern float spectrogram_history[3][NUM_FREQS];  // Must use literal 3 here
 extern uint8_t spectrogram_history_index;
+
+// ------------------------------------------------------------
+// Audio input ring/counters (i2s_audio.h) --------------------
+extern volatile uint32_t g_rb_partial_bytes;   // bytes accumulated but not yet processed
+extern volatile uint32_t g_rb_deadline_miss;   // frames where soft deadline hit without full chunk
+extern volatile uint32_t g_rb_reads;           // successful full reads
 
 // ------------------------------------------------------------
 // Used for converting for storage in LittleFS (bridge_fs.h) --
@@ -457,6 +464,13 @@ struct cached_config {
   // Palette cache for atomic switching (prevents race conditions)
   const CRGB16* palette_ptr;   // Pointer to 256-entry CRGB16 LUT (or nullptr if disabled)
   uint16_t      palette_size;  // Size of palette (typically 256)
+
+  // Coordinator metadata (Phase 3 dual-strip overhaul)
+  SQ15x16 coordinator_phase_offset;
+  bool     coordinator_anti_phase;
+  SQ15x16 coordinator_hue_detune;
+  SQ15x16 coordinator_intensity_balance;
+  uint8_t  coordinator_variation_type;
 };
 extern struct cached_config frame_config;
 

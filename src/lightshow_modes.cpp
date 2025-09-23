@@ -1,4 +1,5 @@
 #include "lightshow_modes.h"
+#include "dual_coordinator.h"
 
 namespace {
 constexpr uint32_t kPaletteTraceMagic = 0xBEEF0000u;
@@ -16,6 +17,13 @@ void cache_frame_config() {
   const CRGB16* palette_lut = palette_lut_for_index(frame_config.PALETTE_INDEX);
   frame_config.palette_ptr = palette_lut;
   frame_config.palette_size = palette_lut_size(frame_config.PALETTE_INDEX);
+
+  // Snapshot coordinator metadata for ChannelRunners
+  frame_config.coordinator_phase_offset = g_coupling_plan.phase_offset;
+  frame_config.coordinator_anti_phase = g_coupling_plan.anti_phase;
+  frame_config.coordinator_hue_detune = g_coupling_plan.hue_detune;
+  frame_config.coordinator_intensity_balance = g_coupling_plan.intensity_balance;
+  frame_config.coordinator_variation_type = g_coupling_plan.variation_type;
 
   uint32_t pal_state = frame_config.palette_ptr ? (kPaletteTraceMagic | frame_config.palette_size) : 0u;
   TRACE_INFO(LED_FRAME_START, pal_state);

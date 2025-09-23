@@ -64,6 +64,7 @@
 // #include "palettes_bridge.h"  // Palette system integration - safe scaffold ready for Phase 2
 #include "GDFT.h"             // Conversion to (and post-processing of) frequency data! (hey, something cool!)
 #include "lightshow_modes.h"  // --- FINALLY, the FUN STUFF!
+#include "dual_coordinator.h" // Dual-strip coordinator (Coupling plans, operators)
 #include "debug/palette_debug.h"  // Palette debugging instrumentation
 #include "palettes/palette_luts_api.h"  // Names + LUT count for calibrated palettes
 #include "hmi/dual_encoder_controller.h"  // Dual encoder controller
@@ -198,6 +199,9 @@ void setup() {
     }
   }
 
+  // Prepare dual-strip coordinator now that core state is initialized
+  coordinator_init();
+
   if (USBSerial) {
     USBSerial.println("DEBUG: About to create LED thread...");
     USBSerial.flush();
@@ -207,7 +211,8 @@ void setup() {
   // The audio pipeline is running on Core 0. By moving the LED thread to the
   // other core, we distribute the workload, reduce contention, and significantly
   // improve performance and stability.
-  xTaskCreatePinnedToCore(led_thread, "led_task", 8192, NULL, tskIDLE_PRIORITY + 1, &led_task, 1);
+  // Raise LED task priority to reduce render jitter and avoid idle sleeps
+  xTaskCreatePinnedToCore(led_thread, "led_task", 8192, NULL, tskIDLE_PRIORITY + 3, &led_task, 1);
   
   if (USBSerial) {
     USBSerial.println("DEBUG: LED thread created successfully on Core 1!");
@@ -247,6 +252,10 @@ void main_loop_thread(void* arg) {
 // Actual loop code moved to separate function
 void main_loop_core0() {
   static bool first_loop = true;
+  static uint32_t a_time_acc_us = 0;
+  static uint32_t b_time_acc_us = 0;
+  static uint32_t metrics_win_start_ms = 0;
+  static uint32_t metrics_frames = 0;
   if (first_loop) {
     if (USBSerial) {
       USBSerial.println("DEBUG: Entered main loop!");
@@ -254,7 +263,7 @@ void main_loop_core0() {
     }
     first_loop = false;
   }
-  
+  uint32_t t_loop_start = micros();
   // No frame rate limiting - target is 120+ FPS
   
   uint32_t t_now_us = micros();        // Timestamp for this loop, used by some core functions
@@ -277,6 +286,10 @@ void main_loop_core0() {
     // Use debug manager for performance reporting (2.4 second interval with stagger)
     if (DebugManager::should_print(DEBUG_PERFORMANCE)) {
       DebugManager::print_s3_performance(actual_fps, g_race_condition_count);
+      USBSerial.print("RB reads/miss: ");
+      USBSerial.print(g_rb_reads);
+      USBSerial.print("/");
+      USBSerial.println(g_rb_deadline_miss);
       DebugManager::mark_printed(DEBUG_PERFORMANCE);
     }
     frame_count = 0;
@@ -285,13 +298,16 @@ void main_loop_core0() {
     xSemaphoreGive(serial_mutex);
   }
 
-  function_id = 0;     // These are for debug_function_timing() in system.h to see what functions take up the most time
-  check_knobs(t_now);  // (knobs.h)
-  // Check if the knobs have changed
+  // ---- Phase A: controls/settings/p2p/serial ----
+  #if ENABLE_INPUTS_RUNTIME
+    function_id = 0;     // These are for debug_function_timing() in system.h to see what functions take up the most time
+    check_knobs(t_now);  // (knobs.h)
+    // Check if the knobs have changed
 
-  function_id = 1;
-  check_buttons(t_now);  // (buttons.h)
-  // Check if the buttons have changed
+    function_id = 1;
+    check_buttons(t_now);  // (buttons.h)
+    // Check if the buttons have changed
+  #endif
 
   g_hmi_controller.update(t_now);
   
@@ -308,10 +324,14 @@ void main_loop_core0() {
   // Check if UART commands are available
   
 
-  function_id = 4;
-  run_p2p();  // (p2p.h)
-  // Process P2P network packets to synchronize units
+  #if ENABLE_P2P_RUNTIME
+    function_id = 4;
+    run_p2p();  // (p2p.h)
+    // Process P2P network packets to synchronize units
+  #endif
+  uint32_t t_after_A = micros();
 
+  // ---- Phase B: audio capture + analysis ----
   function_id = 5;
 #ifdef ENABLE_PERFORMANCE_MONITORING
   PERF_MONITOR_START();
@@ -336,6 +356,9 @@ void main_loop_core0() {
 
   // Watches the rate of change in the Goertzel bins to guide decisions for auto-color shifting
   calculate_novelty(t_now);
+  uint32_t t_after_B = micros();
+  // WDT feed after Phase B (audio)
+  esp_task_wdt_reset();
   // WDT feed after Phase B (audio)
   esp_task_wdt_reset();
 
@@ -370,9 +393,17 @@ void main_loop_core0() {
   }
   #endif
 
+  #if ENABLE_LOOKAHEAD_SMOOTHING
+    function_id = 8;
+    lookahead_smoothing();  // (GDFT.h)
+    // Peek at upcoming frames to study/prevent flickering
+  #endif
+
   function_id = 8;
-  //lookahead_smoothing();  // (GDFT.h)
-  // Peek at upcoming frames to study/prevent flickering
+  g_coupling_plan = coordinator_update(g_router_state,
+                                       novelty_curve,
+                                       audio_vu_level,
+                                       millis());
 
   function_id = 8;
   log_fps(t_now_us);  // (system.h)
@@ -426,6 +457,28 @@ void main_loop_core0() {
 
   // REMOVED: Useless function timing debug that just prints zeros
   
+  // ---- Accumulate per-phase timings and emit once/sec summary ----
+  metrics_frames++;
+  a_time_acc_us += (t_after_A - t_loop_start);
+  b_time_acc_us += (t_after_B - t_after_A);
+  if (metrics_win_start_ms == 0) metrics_win_start_ms = t_now;
+  if ((t_now - metrics_win_start_ms) >= 4000) { // throttle to ~0.25 Hz
+    uint32_t a_avg = (metrics_frames > 0) ? (a_time_acc_us / metrics_frames) : 0;
+    uint32_t b_avg = (metrics_frames > 0) ? (b_time_acc_us / metrics_frames) : 0;
+    if (USBSerial) {
+      USBSerial.printf("METRICS A(us)=%lu B(us)=%lu rb=%lu/%lu\n",
+                       (unsigned long)a_avg,
+                       (unsigned long)b_avg,
+                       (unsigned long)g_rb_reads,
+                       (unsigned long)g_rb_deadline_miss);
+      // Once/second FPS summary (system loop and LED flips)
+      USBSerial.printf("FPS sys=%.1f led=%.1f\n", SYSTEM_FPS, LED_FPS);
+    }
+    a_time_acc_us = b_time_acc_us = 0;
+    metrics_frames = 0;
+    metrics_win_start_ms = t_now;
+  }
+
   // Add useful audio debug output every 8 seconds
   static uint32_t last_audio_debug = 0;
   if (kEnableAudioDebug && debug_mode && (t_now - last_audio_debug > 8000)) {
@@ -469,13 +522,17 @@ void main_loop_core0() {
 void loop() {
   // CRITICAL: This runs on Core 1 by default
   // All actual work is done in main_loop_thread on Core 0
-  vTaskDelay(1000 / portTICK_PERIOD_MS);  // Sleep for 1 second
+  taskYIELD();
 }
 
 // Run the lights in their own thread! -------------------------------------------------------------
 void led_thread(void* arg) {
   USBSerial.println("DEBUG: LED thread started!");
   USBSerial.flush();
+  static uint32_t c_time_acc_us = 0;
+  static uint32_t d_time_acc_us = 0;
+  static uint32_t l_frames = 0;
+  static uint32_t l_win_start_ms = 0;
 
   while (!g_palette_ready) {
     vTaskDelay(1);
@@ -483,6 +540,7 @@ void led_thread(void* arg) {
   
   while (true) {
     if (led_thread_halt == false) {
+      uint32_t t_c_start = micros();
       begin_frame();
 
       // Cache CONFIG values at start of frame
@@ -584,6 +642,7 @@ void led_thread(void* arg) {
         bool saved_mirror = CONFIG.MIRROR_ENABLED;
         float saved_saturation = CONFIG.SATURATION;
         bool saved_auto_color_shift = CONFIG.AUTO_COLOR_SHIFT;
+        bool saved_secondary_reverse = SECONDARY_REVERSE_ORDER;
         // Save additional potentially modified state
         SQ15x16 saved_hue_position = hue_position;
         SQ15x16 saved_chroma_val = chroma_val;
@@ -608,6 +667,12 @@ void led_thread(void* arg) {
         // Let palettes_bridge.h handle protection internally
         if (CONFIG.AUTO_COLOR_SHIFT == true && CONFIG.PALETTE_INDEX == 0) {
           // Secondary hue shifting only in HSV mode
+          // Apply coordinator hue detune as an offset before processing
+          SQ15x16 det = frame_config.coordinator_hue_detune;
+          hue_position += det;
+          // wrap to [0,1)
+          while (hue_position < SQ15x16(0.0)) hue_position += SQ15x16(1.0);
+          while (hue_position >= SQ15x16(1.0)) hue_position -= SQ15x16(1.0);
           process_color_shift();
 
           #if DEBUG_COLOR_SHIFT_VALUES
@@ -621,6 +686,8 @@ void led_thread(void* arg) {
         memcpy(leds_16, leds_16_prev_secondary, sizeof(CRGB16) * NATIVE_RESOLUTION);
         
         // Use the SECONDARY_LIGHTSHOW_MODE directly without modifying CONFIG.LIGHTSHOW_MODE
+        // Apply anti-phase at output stage by toggling reverse flag for this frame
+        SECONDARY_REVERSE_ORDER = frame_config.coordinator_anti_phase;
         if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_GDFT) {
           light_mode_gdft();
         } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_GDFT_CHROMAGRAM) {
@@ -658,6 +725,7 @@ void led_thread(void* arg) {
         CONFIG.MIRROR_ENABLED = saved_mirror;
         CONFIG.SATURATION = saved_saturation;
         CONFIG.AUTO_COLOR_SHIFT = saved_auto_color_shift;
+        SECONDARY_REVERSE_ORDER = saved_secondary_reverse;
         // Restore additional state
         hue_position = saved_hue_position;
         chroma_val = saved_chroma_val;
@@ -687,13 +755,37 @@ void led_thread(void* arg) {
       }
       
       publish_frame();
+      uint32_t t_after_c = micros();
+      // WDT feed after Phase C (render)
+      esp_task_wdt_reset();
 
+      uint32_t t_before_show = micros();
       show_leds();
+      uint32_t t_after_show = micros();
+      // WDT feed after Phase D (output)
+      esp_task_wdt_reset();
+      // Accumulate C/D timings and print once/sec
+      l_frames++;
+      c_time_acc_us += (t_after_c - t_c_start);
+      d_time_acc_us += (t_after_show - t_before_show);
+      uint32_t now_ms = millis();
+      if (l_win_start_ms == 0) l_win_start_ms = now_ms;
+      if ((now_ms - l_win_start_ms) >= 4000) { // throttle to ~0.25 Hz
+        uint32_t c_avg = (l_frames > 0) ? (c_time_acc_us / l_frames) : 0;
+        uint32_t d_avg = (l_frames > 0) ? (d_time_acc_us / l_frames) : 0;
+        USBSerial.printf("METRICS C(us)=%lu D(us)=%lu\n",
+                         (unsigned long)c_avg,
+                         (unsigned long)d_avg);
+        c_time_acc_us = d_time_acc_us = 0;
+        l_frames = 0;
+        l_win_start_ms = now_ms;
+      }
       
       LED_FPS = 0.95 * LED_FPS + 0.05 * (1000000.0 / (esp_timer_get_time() - last_frame_us));
       last_frame_us = esp_timer_get_time();
     }
-    vTaskDelay(1);
+    // Avoid artificial 1ms sleeps; yield cooperatively instead
+    taskYIELD();
   }
 }
 

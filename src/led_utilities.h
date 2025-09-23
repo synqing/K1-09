@@ -119,6 +119,69 @@ inline uint32_t pack_stage_state(uint8_t stage, bool any_nonzero, uint16_t extra
   return (uint32_t(stage) << 8) | (any_nonzero ? 1u : 0u) | (uint32_t(extra) << 16);
 }
 
+enum class LedBufferViolation : uint16_t {
+  PrimaryBackGuard        = 0x01,
+  SecondaryBackGuard      = 0x02,
+  PrimaryControllerDrift  = 0x11,
+  SecondaryControllerDrift= 0x12,
+};
+
+inline uint32_t encode_violation_payload(LedBufferViolation source, uint32_t count)
+{
+  return (static_cast<uint32_t>(source) << 16) | (count & 0xFFFFu);
+}
+
+inline uint32_t report_flip_violation(LedBufferViolation source)
+{
+  uint32_t current = ++g_flip_violations;
+  TRACE_EVENT(TRACE_CAT_CRITICAL, ERROR_LED_FAILURE,
+              encode_violation_payload(source, current));
+  return current;
+}
+
+inline void ensure_primary_back_buffer()
+{
+  CRGB* expected = g_leds_out_primary_fb[g_led_back_idx];
+  if (leds_out != expected) {
+    report_flip_violation(LedBufferViolation::PrimaryBackGuard);
+    leds_out = expected;
+  }
+}
+
+inline void ensure_secondary_back_buffer()
+{
+  if (!ENABLE_SECONDARY_LEDS) {
+    return;
+  }
+  CRGB* expected = g_leds_out_secondary_fb[g_led_back_idx];
+  if (leds_out_secondary != expected) {
+    report_flip_violation(LedBufferViolation::SecondaryBackGuard);
+    leds_out_secondary = expected;
+  }
+}
+
+inline void check_primary_controller_alignment()
+{
+  if (!g_primary_ctrl) {
+    return;
+  }
+  CRGB* expected_front = g_leds_out_primary_fb[g_led_front_idx];
+  if (g_primary_ctrl->leds() != expected_front) {
+    report_flip_violation(LedBufferViolation::PrimaryControllerDrift);
+  }
+}
+
+inline void check_secondary_controller_alignment()
+{
+  if (!ENABLE_SECONDARY_LEDS || !g_secondary_ctrl) {
+    return;
+  }
+  CRGB* expected_front = g_leds_out_secondary_fb[g_led_front_idx];
+  if (g_secondary_ctrl->leds() != expected_front) {
+    report_flip_violation(LedBufferViolation::SecondaryControllerDrift);
+  }
+}
+
 inline uint8_t to_u8_fixed(const SQ15x16& v)
 {
   float f = float(v);
@@ -362,6 +425,11 @@ inline void apply_brightness() {
   // ROOT CAUSE: PHOTONS² was reducing brightness by up to 75% (0.5² = 0.25)
   // SOLUTION: Use linear PHOTONS scaling to match user expectations
   SQ15x16 brightness = MASTER_BRIGHTNESS * CONFIG.PHOTONS * silent_scale;
+  // Coordinator intensity balance: bias primary slightly opposite secondary
+  // balance in [0..1], center at 0.5. Keep modulation small to preserve look.
+  SQ15x16 balance = frame_config.coordinator_intensity_balance; // 0..1
+  SQ15x16 primary_scale = SQ15x16(1.0) - (balance - SQ15x16(0.5)) * SQ15x16(0.3);
+  brightness *= primary_scale;
 
   // Single global floor (replaces all scattered floors throughout the pipeline)
   // Keep small (3%) to preserve low-end detail; adjust only if hardware flicker requires it
@@ -403,6 +471,8 @@ inline void apply_brightness() {
 }
 
 inline void quantize_color(bool temporal_dithering) {
+  // Front-write detector: ensure leds_out points to current back buffer
+  ensure_primary_back_buffer();
   if (temporal_dithering) {
     dither_step++;
     if (dither_step >= 8) {  // Updated for 8-frame dithering
@@ -1103,9 +1173,11 @@ inline void show_leds() {
 
   // Prepare controllers to transmit from current back buffers
   if (g_primary_ctrl) {
+    check_primary_controller_alignment();
     g_primary_ctrl->setLeds((g_leds_out_primary_fb[g_led_back_idx]), CONFIG.LED_COUNT);
   }
   if (ENABLE_SECONDARY_LEDS && g_secondary_ctrl) {
+    check_secondary_controller_alignment();
     g_secondary_ctrl->setLeds((g_leds_out_secondary_fb[g_led_back_idx]), SECONDARY_LED_COUNT_CONST);
   }
   FastLED.setDither(false);
@@ -1993,6 +2065,10 @@ inline void scale_to_secondary_strip() {
 inline void apply_brightness_secondary() {
   // Apply the same silence scaling used for the primary LEDs
   float bright_val = SECONDARY_PHOTONS * SECONDARY_PHOTONS * silent_scale;
+  // Coordinator intensity balance: bias secondary opposite to primary
+  float balance = float(frame_config.coordinator_intensity_balance);
+  float secondary_scale = 1.0f + (balance - 0.5f) * 0.3f;
+  bright_val *= secondary_scale;
   
   if (debug_mode && (millis() % 5000 == 0)) {
     USBSerial.print("DEBUG: Secondary brightness = ");
@@ -2011,6 +2087,7 @@ inline void apply_brightness_secondary() {
 }
 
 inline void show_secondary_leds() {
+  ensure_secondary_back_buffer();
   scale_to_secondary_strip();
   apply_brightness_secondary();
   // Quantization needs to happen *after* filtering if filter uses scaled values
@@ -2156,6 +2233,8 @@ inline void apply_enhanced_visuals() {
 
 // Add a quantization function for the secondary strip similar to primary
 inline void quantize_color_secondary(bool temporal_dither) {
+  // Front-write detector for secondary buffer
+  ensure_secondary_back_buffer();
   if (temporal_dither) {
     static uint8_t noise_origin_r_s = 0, noise_origin_g_s = 0, noise_origin_b_s = 0;
     noise_origin_r_s++;
