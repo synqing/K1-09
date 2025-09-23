@@ -5,7 +5,11 @@
 #define USBSerial Serial
 #endif
 
+#ifndef SB_SYSTEM_IMPL
+extern uint32_t timing_start;
+#else
 uint32_t timing_start = 0;
+#endif
 extern void run_sweet_spot();
 extern void show_leds();
 extern void init_palette_luts();
@@ -19,6 +23,9 @@ extern void init_i2s();
 extern void init_p2p();
 extern void intro_animation();
 
+#ifndef SB_SYSTEM_IMPL
+void reboot();
+#else
 void reboot() {
   lock_leds();
   USBSerial.println("--- ! REBOOTING to apply changes (You may need to restart the Serial Monitor)");
@@ -33,14 +40,24 @@ void reboot() {
   FastLED.show();
   ESP.restart();
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void start_timing(const char* func_name);
+#else
 void start_timing(const char* func_name) {
   USBSerial.print(func_name);
   USBSerial.print(": ");
   USBSerial.flush();
   timing_start = micros();
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void end_timing();
+#else
 void end_timing() {
   uint32_t timing_end = micros();
   uint32_t t_delta = timing_end - timing_start;
@@ -49,10 +66,17 @@ void end_timing() {
   USBSerial.print(t_delta / 1000.0, 3);
   USBSerial.println(" MS");
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void check_current_function();
+#else
 void check_current_function() {
   function_hits[function_id]++;
 }
+#endif
+
 
 static void usb_event_callback(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
   if (event_base == ARDUINO_USB_EVENTS) {
@@ -119,6 +143,9 @@ static void usb_event_callback(void* arg, esp_event_base_t event_base, int32_t e
   }
 }
 
+#ifndef SB_SYSTEM_IMPL
+void enable_usb_update_mode();
+#else
 void enable_usb_update_mode() {
   USB.onEvent(usb_event_callback);
 
@@ -175,7 +202,12 @@ void enable_usb_update_mode() {
     yield();
   }
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void init_usb();
+#else
 void init_usb() {
   #ifdef ARDUINO_ESP32S3_DEV
     // S3 with CDC on boot doesn't need USB.begin()
@@ -185,7 +217,12 @@ void init_usb() {
     delay(500);
   #endif
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void init_sweet_spot();
+#else
 void init_sweet_spot() {
   #ifndef ARDUINO_ESP32S3_DEV
   // Only initialize sweet spot LEDs on S2 (S3 has no sweet spot LEDs)
@@ -199,7 +236,12 @@ void init_sweet_spot() {
   ledcAttachPin(SWEET_SPOT_RIGHT_PIN, SWEET_SPOT_RIGHT_CHANNEL);
   #endif
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void generate_a_weights();
+#else
 void generate_a_weights() {
   start_timing("GENERATING A-WEIGHTS");
   for (uint8_t i = 0; i < 13; i++) {
@@ -235,7 +277,12 @@ void generate_a_weights() {
   }
   end_timing();
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void generate_window_lookup();
+#else
 void generate_window_lookup() {
   start_timing("GENERATING HANN WINDOW LOOKUP TABLE");
   for (uint16_t i = 0; i < 2048; i++) {
@@ -247,7 +294,12 @@ void generate_window_lookup() {
   }
   end_timing();
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void precompute_goertzel_constants();
+#else
 void precompute_goertzel_constants() {
   for (uint16_t i = 0; i < NUM_FREQS; i++) {
     int16_t n = i;
@@ -327,7 +379,12 @@ void precompute_goertzel_constants() {
     frequencies[i].zone = (i / float(NUM_FREQS)) * NUM_ZONES;
   }
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void debug_function_timing(uint32_t t_now);
+#else
 void debug_function_timing(uint32_t t_now) {
   static uint32_t last_timing_print = t_now;
 
@@ -344,14 +401,24 @@ void debug_function_timing(uint32_t t_now) {
     last_timing_print = t_now;
   }
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void set_mode_name(uint16_t index, const char* mode_name);
+#else
 void set_mode_name(uint16_t index, const char* mode_name) {
   uint8_t len = strlen(mode_name);
   for (uint8_t i = 0; i < len; i++) {
     mode_names[32 * index + i] = mode_name[i];
   }
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void init_system();
+#else
 void init_system() {
   // SINGLE-CORE OPTIMIZATION: Mutex creation removed
   // Both threads run on Core 0, eliminating need for synchronization
@@ -448,7 +515,12 @@ void init_system() {
     intro_animation();
   }
 }
+#endif
 
+
+#ifndef SB_SYSTEM_IMPL
+void log_fps(uint32_t t_now_us);
+#else
 void log_fps(uint32_t t_now_us) {
   static uint32_t t_last = t_now_us;
   static float fps_history[10] = {0};
@@ -479,6 +551,8 @@ void log_fps(uint32_t t_now_us) {
 
   t_last = t_now_us;
 }
+#endif
+
 
 // This is to prevent overuse of internal flash writes!
 // Instead of writing every single setting change to
@@ -486,6 +560,9 @@ void log_fps(uint32_t t_now_us) {
 // for more than 3 seconds before attempting to update
 // the flash with changes. This helps in scenarios where
 // you're rapidly cycling through modes for example.
+#ifndef SB_SYSTEM_IMPL
+void check_settings(uint32_t t_now);
+#else
 void check_settings(uint32_t t_now) {
   if (settings_updated) {
     if (t_now >= next_save_time) {
@@ -497,3 +574,4 @@ void check_settings(uint32_t t_now) {
     }
   }
 }
+#endif
