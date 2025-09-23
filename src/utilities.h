@@ -133,6 +133,9 @@ SQ15x16 mood_scale(SQ15x16 center, SQ15x16 range){
 #endif
 
 
+#ifndef SB_UTILITIES_IMPL
+SQ15x16 fabs_fixed(SQ15x16 input);
+#else
 SQ15x16 fabs_fixed(SQ15x16 input){
   if(input < SQ15x16(0.0)){
     input *= SQ15x16(-1.0);
@@ -140,6 +143,7 @@ SQ15x16 fabs_fixed(SQ15x16 input){
 
   return input;
 }
+#endif
 
 #ifndef SB_UTILITIES_IMPL
 SQ15x16 fmin_fixed(SQ15x16 a, SQ15x16 b);
