@@ -1,6 +1,10 @@
 #include "globals.h"
 #include <esp_pm.h>
 
+#if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT && !defined(USBSerial)
+#define USBSerial Serial
+#endif
+
 uint32_t timing_start = 0;
 extern void run_sweet_spot();
 extern void show_leds();
