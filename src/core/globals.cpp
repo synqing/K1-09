@@ -25,7 +25,7 @@ SensoryBridge::Config::conf CONFIG = {
   160,                 // LED_COUNT
   GRB,                 // LED_COLOR_ORDER
   true,                // LED_INTERPOLATION
-  256,                 // SAMPLES_PER_CHUNK - Balanced latency and resolution (8ms window)
+  128,                 // SAMPLES_PER_CHUNK - Balanced latency and resolution (8ms window)
   1.0,                 // SENSITIVITY - 1.0 = no gain adjustment, >1.0 = amplify, <1.0 = attenuate
   true,                // BOOT_ANIMATION
   750,                 // SWEET_SPOT_MIN_LEVEL
@@ -153,8 +153,11 @@ CRGB16  waveform_last_color_secondary = {{ 0 }, { 0 }, { 0 }};
 SQ15x16 ui_mask[160];
 SQ15x16 ui_mask_height = 0.0;
 
-CRGB16 *leds_scaled;
-CRGB *leds_out;
+// Static storage for LED buffers (primary strip)
+static CRGB16 g_leds_scaled_primary[160];
+static CRGB   g_leds_out_primary[160];
+CRGB16 *leds_scaled = g_leds_scaled_primary;
+CRGB *leds_out = g_leds_out_primary;
 
 SQ15x16 hue_shift = 0.0; // Used in auto color cycling
 
@@ -303,8 +306,11 @@ float last_sample = 0;
 
 // New buffers for secondary LED strip
 CRGB16  leds_16_secondary[160];        // Main buffer for secondary strip
-CRGB16 *leds_scaled_secondary;         // For scaling to actual LED count
-CRGB *leds_out_secondary;              // Final output buffer
+// Static storage for LED buffers (secondary strip)
+static CRGB16 g_leds_scaled_secondary[160];
+static CRGB   g_leds_out_secondary[160];
+CRGB16 *leds_scaled_secondary = g_leds_scaled_secondary;         // For scaling to actual LED count
+CRGB *leds_out_secondary = g_leds_out_secondary;              // Final output buffer
 
 // Secondary strip configuration - constants moved to constants.h as #defines for FastLED templates
 uint8_t SECONDARY_LIGHTSHOW_MODE = LIGHT_MODE_WAVEFORM; // Secondary channel: Waveform mode
@@ -358,7 +364,9 @@ SQ15x16 note_colors[12] = {
 CRGB16 incandescent_lookup = {{ 1.0000 }, { 0.4453 }, { 0.1562 }};
 
 // LED_LERP ODR FIX [2025-09-19 17:15] - Moved from led_utilities.h
-LerpParams* led_lerp_params = NULL;
+// Static storage for lerp params (up to 160 LEDs)
+static LerpParams g_led_lerp_params[160];
+LerpParams* led_lerp_params = g_led_lerp_params;
 bool lerp_params_initialized = false;
 
 // PALETTE INTEGRATION [2025-09-20] - Phase 2 minimal state management

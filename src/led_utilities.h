@@ -818,14 +818,12 @@ extern LerpParams* led_lerp_params;
 extern bool lerp_params_initialized;
 
 inline void init_lerp_params() {
-    if (CONFIG.LED_COUNT != NATIVE_RESOLUTION && !lerp_params_initialized) {
-        if (led_lerp_params) delete[] led_lerp_params;
-        led_lerp_params = new LerpParams[CONFIG.LED_COUNT];
-        
-        for (uint16_t i = 0; i < CONFIG.LED_COUNT; i++) {
-            SQ15x16 prog = SQ15x16(i) / SQ15x16(CONFIG.LED_COUNT);
+    if (!lerp_params_initialized) {
+        uint16_t count = CONFIG.LED_COUNT;
+        if (count > NATIVE_RESOLUTION) count = NATIVE_RESOLUTION;
+        for (uint16_t i = 0; i < count; i++) {
+            SQ15x16 prog = SQ15x16(i) / SQ15x16(count);
             SQ15x16 index = prog * SQ15x16(NATIVE_RESOLUTION);
-            
             led_lerp_params[i].index_left = index.getInteger();
             led_lerp_params[i].index_right = led_lerp_params[i].index_left + 1;
             SQ15x16 index_fract = index - SQ15x16(led_lerp_params[i].index_left);
@@ -1128,32 +1126,14 @@ inline void show_leds() {
 inline void init_leds() {
   bool leds_started = false;
 
-  // TACTICAL FIX: Validate LED_COUNT before allocation
-  if (CONFIG.LED_COUNT == 0 || CONFIG.LED_COUNT > 1000) {
-    USBSerial.println("ERROR: Invalid LED_COUNT in config! Using default 128");
-    CONFIG.LED_COUNT = 128;
-  }
-
-  leds_scaled = new CRGB16[CONFIG.LED_COUNT];
-  leds_out = new CRGB[CONFIG.LED_COUNT];
-  
-  // TACTICAL FIX: Check allocation success
-  if (leds_scaled == nullptr || leds_out == nullptr) {
-    USBSerial.println("ERROR: Failed to allocate LED buffers!");
-    ESP.restart();
+  // Validate LED_COUNT against static capacity (160)
+  if (CONFIG.LED_COUNT == 0 || CONFIG.LED_COUNT > NATIVE_RESOLUTION) {
+    USBSerial.println("WARN: Invalid LED_COUNT; clamping to NATIVE_RESOLUTION");
+    CONFIG.LED_COUNT = NATIVE_RESOLUTION;
   }
   
   // CRITICAL FIX: Allocate secondary LED buffers if enabled
   if (ENABLE_SECONDARY_LEDS) {
-    leds_scaled_secondary = new CRGB16[SECONDARY_LED_COUNT_CONST];
-    leds_out_secondary = new CRGB[SECONDARY_LED_COUNT_CONST];
-    
-    if (leds_scaled_secondary == nullptr || leds_out_secondary == nullptr) {
-      USBSerial.println("ERROR: Failed to allocate secondary LED buffers!");
-      ESP.restart();
-    }
-    
-    // Initialize secondary buffers to black
     for (uint16_t i = 0; i < SECONDARY_LED_COUNT_CONST; i++) {
       leds_scaled_secondary[i] = {0, 0, 0};
       leds_out_secondary[i] = CRGB(0, 0, 0);
@@ -1973,16 +1953,11 @@ inline CRGB16 adjust_hue_and_saturation(CRGB16 color, SQ15x16 hue, SQ15x16 satur
 }
 
 inline void init_secondary_leds() {
-  leds_scaled_secondary = new CRGB16[SECONDARY_LED_COUNT_CONST];
-  leds_out_secondary = new CRGB[SECONDARY_LED_COUNT_CONST];
-
   // Use #define constants for FastLED template arguments (required for compile-time evaluation)
   FastLED.addLeds<WS2812B, SECONDARY_LED_DATA_PIN, GRB>(leds_out_secondary, SECONDARY_LED_COUNT_CONST);
-  
   for (uint16_t x = 0; x < SECONDARY_LED_COUNT_CONST; x++) {
     leds_out_secondary[x] = CRGB(0, 0, 0);
   }
-  
   USBSerial.print("INIT_SECONDARY_LEDS: ");
   USBSerial.println(SB_PASS);
 }
