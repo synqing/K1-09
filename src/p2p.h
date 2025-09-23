@@ -4,13 +4,27 @@
 
 #include <WiFi.h>  // Include WiFi library for ESP32
 #include "globals.h"
+#include "led_utilities.h"
+#include "noise_cal.h"
 
 // Fully documenting the P2P functions is a TODO for now.
 // Sorry!
 
+#ifndef SB_P2P_IMPL
+extern const uint8_t broadcast_address[6];
+#else
 const uint8_t broadcast_address[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+#endif
+#ifndef SB_P2P_IMPL
+extern esp_now_peer_info_t broadcast_peer;
+#else
 esp_now_peer_info_t broadcast_peer;
+#endif
+#ifndef SB_P2P_IMPL
+extern bool flashing_flag;
+#else
 bool flashing_flag = false;
+#endif
 
 enum COMMAND_TYPES {
   COMMAND_NULL,               // 0
@@ -143,12 +157,14 @@ void on_data_tx(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
 
 // ESP32 Arduino Core 3.x compatibility fix
+#ifndef SB_P2P_IMPL
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-void on_data_rx(const esp_now_recv_info_t *recv_info, const uint8_t *incoming_data, int len) {
-  const uint8_t *mac_addr = recv_info->src_addr;
+void on_data_rx(const esp_now_recv_info_t *recv_info, const uint8_t *incoming_data, int len);
 #else
-void on_data_rx(const uint8_t *mac_addr, const uint8_t *incoming_data, int len) {
+void on_data_rx(const uint8_t *mac_addr, const uint8_t *incoming_data, int len);
 #endif
+#else
+static inline void on_data_rx_internal(const uint8_t *mac_addr, const uint8_t *incoming_data, int len) {
   //Serial.println("RX PACKET");
   main_override = false;
   last_rx_time = millis();
@@ -204,6 +220,17 @@ void on_data_rx(const uint8_t *mac_addr, const uint8_t *incoming_data, int len) 
     }
   }
 }
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+void on_data_rx(const esp_now_recv_info_t *recv_info, const uint8_t *incoming_data, int len) {
+  const uint8_t *mac_addr = recv_info->src_addr;
+  on_data_rx_internal(mac_addr, incoming_data, len);
+}
+#else
+void on_data_rx(const uint8_t *mac_addr, const uint8_t *incoming_data, int len) {
+  on_data_rx_internal(mac_addr, incoming_data, len);
+}
+#endif
+#endif
 
 #ifndef SB_P2P_IMPL
 void init_p2p();
@@ -249,4 +276,3 @@ void run_p2p() {
   }
 }
 #endif
-

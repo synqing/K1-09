@@ -9,3 +9,5 @@
 #endif
 
 #include "../p2p.h"
+#include "../led_utilities.h"
+#include "../noise_cal.h"
