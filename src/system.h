@@ -5,6 +5,14 @@ uint32_t timing_start = 0;
 extern void run_sweet_spot();
 extern void show_leds();
 extern void init_palette_luts();
+extern void init_serial(uint32_t baud_rate);
+extern void init_fs();
+extern void restore_defaults();
+extern void init_leds();
+extern void init_secondary_leds();
+extern void init_i2s();
+extern void init_p2p();
+extern void intro_animation();
 
 void reboot() {
   lock_leds();
