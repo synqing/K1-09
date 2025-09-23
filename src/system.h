@@ -12,6 +12,7 @@ extern void init_palette_luts();
 extern void init_serial(uint32_t baud_rate);
 extern void init_fs();
 extern void restore_defaults();
+extern void save_config();
 extern void init_leds();
 extern void init_secondary_leds();
 extern void init_i2s();
