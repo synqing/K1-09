@@ -100,10 +100,18 @@ inline void light_mode_gdft() {
        }
        led_hue = hue1 * (1.0 - freq_fract) + hue2 * freq_fract;
        if (led_hue >= 1.0) led_hue -= 1.0; // Normalize back to 0-1 range
+       // Apply coordinator hue detune only in HSV mode
+       if (CONFIG.PALETTE_INDEX == 0) {
+         led_hue += frame_config.coordinator_hue_detune;
+         while (led_hue < 0.0) led_hue += 1.0;
+         while (led_hue >= 1.0) led_hue -= 1.0;
+       }
 
     } else {
       // Use frame_config.CHROMA directly
-      led_hue = frame_config.CHROMA + hue_position + ((sqrt(float(bin)) * SQ15x16(0.05)) + (prog * SQ15x16(0.10)) * hue_shifting_mix);
+      led_hue = frame_config.CHROMA + hue_position + frame_config.coordinator_hue_detune + ((sqrt(float(bin)) * SQ15x16(0.05)) + (prog * SQ15x16(0.10)) * hue_shifting_mix);
+      while (led_hue < 0.0) led_hue += 1.0;
+      while (led_hue >= 1.0) led_hue -= 1.0;
     }
 
     // Place calculated color in the second half of the buffer initially
@@ -242,7 +250,9 @@ inline void light_mode_vu_dot() {
   if (CONFIG.PALETTE_INDEX > 0) {
     hue = hue_position;  // Palette mode: neutral hue, no CHROMA contamination
   } else {
-    hue = chroma_val + hue_position;  // HSV mode: full CHROMA control
+    hue = chroma_val + hue_position + frame_config.coordinator_hue_detune;  // HSV mode: apply small detune
+    while (hue < 0.0) hue += 1.0;
+    while (hue >= 1.0) hue -= 1.0;
   }
   // PALETTE TEST [2025-01-20]: Single injection point for safe testing
   CRGB16 color = hsv_or_palette(hue, CONFIG.SATURATION, brightness);

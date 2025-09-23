@@ -1,6 +1,9 @@
 #include "dual_coordinator.h"
 #include "globals.h"
 #include <Arduino.h>
+#if ARDUINO_USB_CDC_ON_BOOT
+#define USBSerial Serial
+#endif
 
 // Router FSM scaffolding for Agent B: expand as per docs/phase3_dual_router_task.md
 // Note: Keep this file dependency-light; actual integration should use coordinator_update.
@@ -30,4 +33,3 @@ void router_fsm_tick(const SQ15x16* novelty_curve,
     USBSerial.println("[ROUTER] tick placeholder – implement FSM");
   }
 }
-
