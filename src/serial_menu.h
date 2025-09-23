@@ -22,15 +22,37 @@ extern uint32_t led_fps_sum;
 extern uint32_t benchmark_sample_count;
 const uint32_t benchmark_duration = 10000; // Duration in milliseconds (e.g., 10 seconds)
 
-void tx_begin(bool error = false) {
+extern void print_chip_id();
+extern void blocking_flash(CRGB16 col);
+extern void clear_noise_cal();
+extern void save_config();
+extern void save_config_delayed();
+extern void factory_reset();
+extern void restore_defaults();
+extern void set_preset(char* preset_name);
+
+void tx_begin(bool error = false);
+void tx_end(bool error = false);
+void ack();
+void bad_command(char* command_type, char* command_data);
+void stop_streams();
+void init_serial(uint32_t baud_rate);
+void dump_info();
+void parse_command(char* command_buf);
+void check_serial(uint32_t t_now);
+
+#ifndef SB_SERIAL_MENU_IMPL
+// Declarations only; bodies compiled when SB_SERIAL_MENU_IMPL is defined.
+#else
+
+void tx_begin(bool error) {
   if (error == false) {
     USBSerial.println("sbr{{");
   } else {
     USBSerial.println("sberr[[");
   }
 }
-
-void tx_end(bool error = false) {
+void tx_end(bool error) {
   if (error == false) {
     USBSerial.println("}}");
   } else {
@@ -1806,3 +1828,4 @@ void check_serial(uint32_t t_now) {
     }
   }
 }
+#endif // SB_SERIAL_MENU_IMPL
