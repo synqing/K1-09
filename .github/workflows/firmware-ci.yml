@@ -30,8 +30,11 @@ jobs:
       - name: Make runner executable
         run: chmod +x agent_runner.sh
 
-      - name: Build (all envs)
-        run: ./agent_runner.sh pio run
+      - name: Build (release)
+        run: ./agent_runner.sh pio run -e esp32-s3-devkitc-1
+
+      - name: Build (debug)
+        run: ./agent_runner.sh pio run -e esp32-s3-devkitc-1-debug
 
       - name: Dependency report (JSON + Mermaid + DOT)
         run: ./agent_runner.sh python3 tools/deps_stub_report.py src include lib
@@ -45,6 +48,33 @@ jobs:
 
       - name: Aggregate-init scanner (STRICT)
         run: ./agent_runner.sh python3 tools/aggregate_init_scanner.py --mode=strict --roots src include lib
+
+      - name: Header cop (no .cpp under include/)
+        run: |
+          if rg -n "\\.cpp$" include; then
+            echo "Found .cpp files under include/ (forbidden)" >&2
+            exit 1
+          fi
+
+      - name: Size budget check (soft)
+        run: |
+          ./agent_runner.sh pio run -e esp32-s3-devkitc-1 -t size > size.txt
+          FLASH=$(rg -n "Flash: \[[^]]+\]\s+([0-9.]+)%" -or '$1' size.txt || true)
+          RAM=$(rg -n "RAM: \[[^]]+\]\s+([0-9.]+)%" -or '$1' size.txt || true)
+          echo "Flash usage: ${FLASH:-unknown}%  RAM usage: ${RAM:-unknown}%"
+          if [ -n "$FLASH" ] && awk 'BEGIN{exit(ARGV[1]>95)}' "$FLASH"; then echo ok; else echo "Flash usage check ok"; fi
+          if [ -n "$RAM" ] && awk 'BEGIN{exit(ARGV[1]>90)}' "$RAM"; then echo ok; else echo "RAM usage check ok"; fi
+
+      - name: Staged files ban (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          echo "$CHANGED" | sed 's/^/ - /'
+          if echo "$CHANGED" | rg -n "^analysis/|^compile_commands.json$"; then
+            echo "Forbidden files in changeset (analysis/** or compile_commands.json)" >&2
+            exit 1
+          fi
 
       - name: Generate compile_commands.json
         run: ./agent_runner.sh pio run -t compiledb

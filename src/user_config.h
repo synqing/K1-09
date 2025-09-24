@@ -14,16 +14,9 @@
 //       commenting/uncommenting one here or selecting via the UART menu
 
 // Color pipeline guard: enables gamma-aware HSV that outputs linear CRGB16
-// Keep default OFF until Phase 4 acceptance completes.
+// Default ON for validation; set to 0 to revert legacy HSV quickly if needed.
 #ifndef ENABLE_NEW_COLOR_PIPELINE
-#define ENABLE_NEW_COLOR_PIPELINE 0
-#endif
-
-// Color Refit: collaborative rollout guards
-// ENABLE_NEW_COLOR_PIPELINE — when 1, HSV path outputs linear CRGB16 (gamma-aware) to match palette LUTs.
-// Default OFF until Phase 4 acceptance; all PR slices must be releasable with this set to 0.
-#ifndef ENABLE_NEW_COLOR_PIPELINE
-#define ENABLE_NEW_COLOR_PIPELINE 0
+#define ENABLE_NEW_COLOR_PIPELINE 1
 #endif
 
 // Future façade adoption guard (placeholder): toggle for migrating modes to palette_facade helpers.
