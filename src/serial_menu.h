@@ -23,7 +23,6 @@ extern uint32_t benchmark_sample_count;
 const uint32_t benchmark_duration = 10000; // Duration in milliseconds (e.g., 10 seconds)
 
 extern void print_chip_id();
-extern void blocking_flash(CRGB16 col);
 extern void clear_noise_cal();
 extern void save_config();
 extern void save_config_delayed();
@@ -443,8 +442,7 @@ void parse_command(char* command_buf) {
   else if (strcmp(command_buf, "identify") == 0) {
 
     ack();
-    CRGB16 col = {{1.00}, {0.25}, {0.00}};
-    blocking_flash(col);
+    // Visual identify disabled (legacy blocking_flash removed).
 
   }
 

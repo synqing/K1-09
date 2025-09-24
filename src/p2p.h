@@ -111,8 +111,8 @@ void identify_main_unit() {
     esp_now_send(peer_addr, (uint8_t *)&identify, sizeof(SB_COMMAND_IDENTIFY_MAIN));
   }
 
-  CRGB16 col = {{ 1.0 }, { 0.0 }, { 0.0 }};
-  blocking_flash(col); // We aren't main unit, flash red
+
+  // TODO: Optional visual identification in refit; no-op for now.
 }
 #endif
 
@@ -271,8 +271,7 @@ void run_p2p() {
 
   if (flashing_flag) {
     flashing_flag = false;
-    CRGB16 col = {{ 0.0 }, { 1.0 }, { 0.0 }};
-    blocking_flash(col);
+    // Visual flash disabled in refit pipeline; no-op.
   }
 }
 #endif

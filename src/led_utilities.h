@@ -1279,29 +1279,6 @@ inline void init_leds() {
   USBSerial.println(leds_started == true ? SB_PASS : SB_FAIL);
 }
 
-inline void blocking_flash(CRGB16 col) {
-  led_thread_halt = true;
-  for (uint8_t i = 0; i < NATIVE_RESOLUTION; i++) {
-    leds_16[i] = { 0, 0, 0 };
-  }
-
-  const uint8_t flash_times = 2;
-  for (uint8_t f = 0; f < flash_times; f++) {
-    for (uint8_t i = 0 + 48; i < NATIVE_RESOLUTION - 48; i++) {
-      leds_16[i] = col;
-    }
-    show_leds();
-    FastLED.delay(150);
-
-    for (uint8_t i = 0; i < NATIVE_RESOLUTION; i++) {
-      leds_16[i] = { 0, 0, 0 };
-    }
-    show_leds();
-    FastLED.delay(150);
-  }
-  led_thread_halt = false;
-}
-
 inline void clear_all_led_buffers() {
   for (uint8_t i = 0; i < NATIVE_RESOLUTION; i++) {
     leds_16[i] = { 0, 0, 0 };
