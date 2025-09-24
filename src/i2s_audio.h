@@ -22,8 +22,20 @@ const i2s_config_t i2s_config = {
   .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
   .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
   .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+  .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
   .dma_buf_count = 8,  // Increased from 2 for better double-buffering
   .dma_buf_len = CONFIG.SAMPLES_PER_CHUNK * 2,  // Larger buffers reduce interrupt overhead
+  .use_apll = false,
+  .tx_desc_auto_clear = false,
+  .fixed_mclk = 0,
+  .mclk_multiple = I2S_MCLK_MULTIPLE_DEFAULT,
+  .bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT,
+  .chan_mask = I2S_CHANNEL_MONO,
+  .total_chan = I2S_CHANNEL_MONO,
+  .left_align = false,
+  .big_edin = false,
+  .bit_order_msb = true,
+  .skip_msk = false
 };
 #endif
 
@@ -31,9 +43,10 @@ const i2s_config_t i2s_config = {
 extern const i2s_pin_config_t pin_config;
 #else
 const i2s_pin_config_t pin_config = {
+  .mck_io_num = I2S_PIN_NO_CHANGE,
   .bck_io_num = I2S_BCLK_PIN,
   .ws_io_num = I2S_LRCLK_PIN,
-  .data_out_num = -1,  // not used (only for outputs)
+  .data_out_num = I2S_PIN_NO_CHANGE,  // capture only
   .data_in_num = I2S_DIN_PIN
 };
 #endif
@@ -71,28 +84,36 @@ void acquire_sample_chunk(uint32_t t_now) {
   static const uint32_t MIN_STATE_DURATION_MS = 1500; // 1 second minimum in each state
   static float max_waveform_val_raw_smooth = 0.0; // Added for smoothing
 
-  size_t bytes_read = 0;
   size_t bytes_expected = CONFIG.SAMPLES_PER_CHUNK * sizeof(int32_t);
+  static size_t partial_bytes = 0; // persist across frames
+  uint8_t* dest = reinterpret_cast<uint8_t*>(audio_raw_state.getRawSamples());
 
-  // MODIFICATION [2025-09-20 22:45] - SURGICAL-FIX-002: Fix I2S partial reads causing random cutouts
-  // FAULT DETECTED: 10ms timeout allows partial I2S reads, causing audio corruption and apparent "cutouts"
-  // ROOT CAUSE: i2s_read() with timeout can return partial chunks, corrupting audio pipeline downstream
-  // SOLUTION RATIONALE: Block until full chunk arrives using portMAX_DELAY to ensure complete reads
-  // IMPACT ASSESSMENT: Eliminates partial read corruption, may slightly increase latency during audio gaps
-  // VALIDATION METHOD: Monitor bytes_read == bytes_expected, verify no more random audio dropouts
-  // ROLLBACK PROCEDURE: Restore 10ms timeout if system becomes unresponsive during audio gaps
-
-  // Block until we get the full chunk - partial reads cause audio corruption
-  i2s_read(I2S_PORT, audio_raw_state.getRawSamples(), bytes_expected, &bytes_read, portMAX_DELAY);
-
-  // Validate we got a complete read (should always be true with portMAX_DELAY)
-  if (bytes_read != bytes_expected) {
-    USBSerial.printf("WARNING: I2S partial read! Got %d bytes, expected %d\n", bytes_read, bytes_expected);
+  // Bounded I2S read loop with soft deadline (avoid indefinite waits on single-core)
+  const uint32_t start_us = micros();
+  const uint32_t soft_deadline_us = 2500; // ~2.5ms budget inside 10ms frame
+  while (partial_bytes < bytes_expected) {
+    size_t n = 0;
+    // Read with a short timeout (1ms ticks)
+    i2s_read(I2S_PORT, dest + partial_bytes, bytes_expected - partial_bytes, &n, pdMS_TO_TICKS(1));
+    if (n > 0) {
+      partial_bytes += n;
+    }
+    if (partial_bytes >= bytes_expected) {
+      break;
+    }
+    if ((micros() - start_us) > soft_deadline_us) {
+      g_rb_deadline_miss++;
+      // Leave partial_bytes as-is for next frame; skip processing to keep loop responsive
+      return;
+    }
   }
+  // We have a complete chunk accumulated
+  g_rb_reads++;
+  partial_bytes = 0;
 
   if (debug_mode && (t_now % 5000 == 0)) {
     USBSerial.print("DEBUG: Bytes read from I2S: ");
-    USBSerial.print(bytes_read);
+    USBSerial.print(bytes_expected);
     USBSerial.print(" Max raw value: ");
     USBSerial.println(max_waveform_val_raw);
   }
@@ -457,4 +478,3 @@ void calculate_vu() {
   audio_vu_level_average = (audio_vu_level + audio_vu_level_last) / (2.0);
 }
 #endif
-

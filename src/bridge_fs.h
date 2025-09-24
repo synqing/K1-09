@@ -8,7 +8,7 @@ extern void reboot(); // system.h
 void update_config_filename(uint32_t input);
 #else
 void update_config_filename(uint32_t input) {
-  snprintf(config_filename, 24, "/CONFIG_%05lu.BIN", input);
+  snprintf(config_filename, sizeof(config_filename), "/CONFIG_%05u.BIN", static_cast<unsigned>(input));
 }
 #endif
 
@@ -320,4 +320,3 @@ void init_fs() {
   unlock_leds();
 }
 #endif
-

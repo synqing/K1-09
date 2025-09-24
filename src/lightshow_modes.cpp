@@ -24,6 +24,9 @@ void cache_frame_config() {
   frame_config.coordinator_hue_detune = g_coupling_plan.hue_detune;
   frame_config.coordinator_intensity_balance = g_coupling_plan.intensity_balance;
   frame_config.coordinator_variation_type = g_coupling_plan.variation_type;
+  frame_config.coordinator_primary_mode = g_coupling_plan.primary_mode;
+  frame_config.coordinator_secondary_mode = g_coupling_plan.secondary_mode;
+  frame_config.coordinator_is_secondary = false; // default for primary channel
 
   uint32_t pal_state = frame_config.palette_ptr ? (kPaletteTraceMagic | frame_config.palette_size) : 0u;
   TRACE_INFO(LED_FRAME_START, pal_state);

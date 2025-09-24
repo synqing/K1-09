@@ -17,6 +17,7 @@
 #include "constants.h"    // For NUM_FREQS, NUM_ZONES, NUM_MODES, MAX_DOTS, K_NONE, CRGB16, DOT, KNOB, light modes, LED types, etc.
 #include <Arduino.h>
 #include <FastLED.h>
+#include "phase3_guards.h" // Compile-time guards for Phase 3 invariants
 
 // CRITICAL: Mutex for controlling access to the thread-unsafe USBSerial port.
 // Prevents garbled debug output from interleaved task printing.
@@ -337,6 +338,20 @@ extern volatile uint32_t g_rb_partial_bytes;   // bytes accumulated but not yet 
 extern volatile uint32_t g_rb_deadline_miss;   // frames where soft deadline hit without full chunk
 extern volatile uint32_t g_rb_reads;           // successful full reads
 
+// Phase timing snapshot (shared A/B averages for consolidated METRICS)
+extern volatile uint32_t g_avg_a_us;  // avg Phase A time over last window (us)
+extern volatile uint32_t g_avg_b_us;  // avg Phase B time over last window (us)
+extern volatile uint32_t g_wdt_b_feeds_window; // watchdog feeds counted in Phase B over last window
+extern volatile uint32_t g_last_c_avg_us;      // last 4s Phase C avg (us)
+extern volatile uint32_t g_last_d_avg_us;      // last 4s Phase D avg (us)
+extern volatile uint8_t  g_last_effective_prism_primary;
+extern volatile uint8_t  g_last_effective_prism_secondary;
+
+// Current limiter (Phase 5 scaffold)
+extern bool     g_current_limiter_enabled;   // runtime gate (default false)
+extern volatile uint32_t g_current_limit_engaged; // count of limiter activations
+extern float    g_current_estimate_ma_ema;   // smoothed current estimate (mA)
+
 // ------------------------------------------------------------
 // Used for converting for storage in LittleFS (bridge_fs.h) --
 
@@ -471,7 +486,41 @@ struct cached_config {
   SQ15x16 coordinator_hue_detune;
   SQ15x16 coordinator_intensity_balance;
   uint8_t  coordinator_variation_type;
+
+  // Router-selected modes (snapshotted per-frame for atomicity)
+  uint8_t  coordinator_primary_mode;
+  uint8_t  coordinator_secondary_mode;
+  bool     coordinator_is_secondary; // true when rendering secondary channel
 };
 extern struct cached_config frame_config;
+
+// QoS degrade (Phase 3): symmetric post-FX controls
+extern SQ15x16 g_qos_brightness_scale;   // 1.0 = no change (optional feature)
+extern volatile uint8_t g_qos_prism_trim; // iterations to trim from prism effect (uniform across channels)
+extern volatile uint8_t g_qos_level;      // coarse 0..3 level for logs
+extern bool g_qos_brightness_degrade_enabled; // default OFF per plan
+
+// -------------------------------
+// Router FSM tunables (Agent B)
+// Exposed via serial for live tuning without rebuilds.
+extern uint8_t  g_router_dwell_min_beats;      // default 4
+extern uint8_t  g_router_dwell_max_beats;      // default 8
+extern uint8_t  g_router_cooldown_min_beats;   // default 2
+extern uint8_t  g_router_cooldown_max_beats;   // default 4
+extern uint8_t  g_router_onset_prob_percent;   // default 30 (% chance after min dwell)
+extern SQ15x16  g_router_novelty_thresh;       // default 0.20
+extern SQ15x16  g_router_vu_delta_thresh;      // default 0.08
+extern uint8_t  g_router_var_mix_detune;       // default 40 (% of variations)
+extern uint8_t  g_router_var_mix_anti;         // default 30
+extern uint8_t  g_router_var_mix_circ;         // default 30
+extern SQ15x16  g_router_detune_max;           // default 0.08 (±)
+extern uint8_t  g_router_circ_frames_max;      // default 3 (frames)
+extern SQ15x16  g_router_balance_min;          // default 0.30
+extern SQ15x16  g_router_balance_max;          // default 0.70
+
+// QoS controller thresholds (Agent B)
+extern uint32_t g_qos_c_target_us;             // default 6000
+extern uint32_t g_qos_c_high_us;               // default 7000
+extern uint32_t g_qos_c_low_us;                // default 5000
 
 #endif // GLOBALS_H

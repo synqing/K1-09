@@ -1,0 +1,53 @@
+{
+  "issues": [
+    {
+      "title": "Phase 5: CI size-budget job and baseline",
+      "labels": ["infrastructure", "phase5", "agent-a", "stream:04-docs-qa"],
+      "milestone": "Phase 5",
+      "stream": "04-docs-qa",
+      "paths": [".github/workflows", "ci/size-baseline.json", "scripts"],
+      "acceptance_checks": [
+        "pio run -t size",
+        "python scripts/verify_size_budget.py"
+      ],
+      "notes": "Capture release build size, store baseline, add CI job with override label support."
+    },
+    {
+      "title": "Phase 5: PR template refresh + docs lint job",
+      "labels": ["infrastructure", "phase5", "agent-a", "stream:04-docs-qa"],
+      "milestone": "Phase 5",
+      "stream": "04-docs-qa",
+      "paths": [".github/PULL_REQUEST_TEMPLATE.md", ".github/workflows"],
+      "acceptance_checks": [
+        "rg -n \"doc-impact\" .github/PULL_REQUEST_TEMPLATE.md",
+        "gh workflow run docs-lint --dry-run"
+      ],
+      "notes": "Add doc-impact/instrumentation checklist items and configure Vale/markdownlint CI job."
+    },
+    {
+      "title": "Phase 5: Optional current limiter (default OFF)",
+      "labels": ["feature", "phase5", "agent-b", "stream:05-limiter"],
+      "milestone": "Phase 5",
+      "stream": "05-limiter",
+      "paths": ["src/led_utilities.h", "src/main.cpp", "docs/03.ssot/firmware-magic-numbers-ssot.md"],
+      "acceptance_checks": [
+        "rg -n \"CURRENT_LIMITER_ENABLED\" src include",
+        "rg -n \"g_current_limit_engaged\" src include"
+      ],
+      "notes": "Implement EMA-based limiter uniformly across strips, add instrumentation, keep disabled by default."
+    },
+    {
+      "title": "Phase 5: Metrics extension for limiter + overlap",
+      "labels": ["feature", "phase5", "agent-b", "stream:05-limiter"],
+      "milestone": "Phase 5",
+      "stream": "05-limiter",
+      "depends_on": ["Phase 5: Optional current limiter (default OFF)"],
+      "paths": ["src/main.cpp", "src/led_utilities.h", "docs/03.ssot/firmware-scheduling-ssot.md"],
+      "acceptance_checks": [
+        "rg -n \"overlap\" src/main.cpp",
+        "rg -n \"g_flip_violations\" docs/03.ssot/firmware-scheduling-ssot.md"
+      ],
+      "notes": "Expose current limiter engagement count and LED overlap % in METRICS stream."
+    }
+  ]
+}

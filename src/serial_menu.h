@@ -13,6 +13,7 @@ extern void reboot();                  // system.h
 #endif
 #include "debug/debug_manager.h"
 #include "globals.h"
+#include "dual_coordinator.h" // Agent B: router plan, pairs, enable/disable, status
 
 // Benchmark state variables (defined in main .ino file)
 extern bool benchmark_running;
@@ -1691,6 +1692,179 @@ void parse_command(char* command_buf) {
       USBSerial.println(SECONDARY_REVERSE_ORDER ? "true" : "false");
       USBSerial.print("SECONDARY_BASE_COAT: ");
       USBSerial.println(SECONDARY_BASE_COAT ? "true" : "false");
+      tx_end();
+    }
+
+    // QoS controls (Phase 3) ------------------------------------
+    /*
+     * QoS Serial Controls (Phase 3)
+     * -----------------------------
+     * qos_brightness=on|off   : enable/disable uniform brightness degrade (default OFF)
+     * qos_level=0..3          : manual override of QoS level (0=no trim .. 3=aggressive)
+     * qos_status              : print current QoS state (level, prism trim, brightness scale)
+     *
+     * Implementation: Prism iterations are trimmed uniformly across channels; optional
+     * brightness scaler is small and smoothed to avoid visual thrash.
+     */
+    else if (strcmp(command_type, "qos_brightness") == 0) {
+      bool good = false;
+      if (strcmp(command_data, "true") == 0 || strcmp(command_data, "on") == 0) {
+        g_qos_brightness_degrade_enabled = true;
+        good = true;
+      } else if (strcmp(command_data, "false") == 0 || strcmp(command_data, "off") == 0) {
+        g_qos_brightness_degrade_enabled = false;
+        g_qos_brightness_scale = SQ15x16(1.0);
+        good = true;
+      }
+      if (good) {
+        tx_begin();
+        USBSerial.print("QOS brightness degrade: ");
+        USBSerial.println(g_qos_brightness_degrade_enabled ? "ON" : "OFF");
+        USBSerial.print("QOS brightness scale: ");
+        USBSerial.println(float(g_qos_brightness_scale), 2);
+        tx_end();
+      } else {
+        bad_command(command_type, command_data);
+      }
+    }
+    else if (strcmp(command_type, "qos_level") == 0) {
+      int lvl = atoi(command_data);
+      if (lvl >= 0 && lvl <= 3) {
+        g_qos_level = (uint8_t)lvl;
+        g_qos_prism_trim = g_qos_level;
+        if (g_qos_brightness_degrade_enabled) {
+          float target_scale = 1.0f - 0.05f * float(g_qos_level);
+          g_qos_brightness_scale = SQ15x16(target_scale);
+        } else {
+          g_qos_brightness_scale = SQ15x16(1.0);
+        }
+        tx_begin();
+        USBSerial.print("QOS level set to ");
+        USBSerial.print(g_qos_level);
+        USBSerial.print(" prism_trim=");
+        USBSerial.print(g_qos_prism_trim);
+        USBSerial.print(" bright=");
+        USBSerial.println(float(g_qos_brightness_scale), 2);
+        tx_end();
+      } else {
+        bad_command(command_type, command_data);
+      }
+    }
+    else if (strcmp(command_type, "qos_status") == 0) {
+      tx_begin();
+      USBSerial.print("QOS enabled: "); USBSerial.println(g_qos_brightness_degrade_enabled ? "true" : "false");
+      USBSerial.print("QOS level: "); USBSerial.println(g_qos_level);
+      USBSerial.print("QOS prism_trim: "); USBSerial.println(g_qos_prism_trim);
+      USBSerial.print("QOS brightness: "); USBSerial.println(float(g_qos_brightness_scale), 2);
+      USBSerial.print("QOS C thresholds (us): target="); USBSerial.print(g_qos_c_target_us);
+      USBSerial.print(" high="); USBSerial.print(g_qos_c_high_us);
+      USBSerial.print(" low="); USBSerial.println(g_qos_c_low_us);
+      USBSerial.print("C/D avg (us): "); USBSerial.print(g_last_c_avg_us); USBSerial.print("/"); USBSerial.println(g_last_d_avg_us);
+      USBSerial.print("effective_prism primary/secondary: "); USBSerial.print(g_last_effective_prism_primary); USBSerial.print("/"); USBSerial.println(g_last_effective_prism_secondary);
+      tx_end();
+    }
+
+    // QoS C-threshold tuning (Agent B)
+    else if (strcmp(command_type, "qos_c_target") == 0) {
+      uint32_t v = (uint32_t) atol(command_data);
+      g_qos_c_target_us = v;
+      ack();
+    }
+    else if (strcmp(command_type, "qos_c_high") == 0) {
+      uint32_t v = (uint32_t) atol(command_data);
+      g_qos_c_high_us = v;
+      ack();
+    }
+    else if (strcmp(command_type, "qos_c_low") == 0) {
+      uint32_t v = (uint32_t) atol(command_data);
+      g_qos_c_low_us = v;
+      ack();
+    }
+
+    // Router FSM tuning (Agent B)
+    else if (strcmp(command_type, "router_dwell_min") == 0) { g_router_dwell_min_beats = uint8_t(atoi(command_data)); ack(); }
+    else if (strcmp(command_type, "router_dwell_max") == 0) { g_router_dwell_max_beats = uint8_t(atoi(command_data)); ack(); }
+    else if (strcmp(command_type, "router_cooldown_min") == 0) { g_router_cooldown_min_beats = uint8_t(atoi(command_data)); ack(); }
+    else if (strcmp(command_type, "router_cooldown_max") == 0) { g_router_cooldown_max_beats = uint8_t(atoi(command_data)); ack(); }
+    else if (strcmp(command_type, "router_onset_prob") == 0) {
+      int v = atoi(command_data); if (v < 0) v = 0; if (v > 100) v = 100; g_router_onset_prob_percent = uint8_t(v); ack();
+    }
+    else if (strcmp(command_type, "router_novelty_thresh") == 0) { g_router_novelty_thresh = SQ15x16(atof(command_data)); ack(); }
+    else if (strcmp(command_type, "router_vu_delta") == 0) { g_router_vu_delta_thresh = SQ15x16(atof(command_data)); ack(); }
+    else if (strcmp(command_type, "router_detune_max") == 0) { g_router_detune_max = SQ15x16(atof(command_data)); ack(); }
+    else if (strcmp(command_type, "router_circ_frames_max") == 0) { int v = atoi(command_data); if (v < 1) v = 1; g_router_circ_frames_max = uint8_t(v); ack(); }
+    else if (strcmp(command_type, "router_balance_min") == 0) { g_router_balance_min = SQ15x16(atof(command_data)); ack(); }
+    else if (strcmp(command_type, "router_balance_max") == 0) { g_router_balance_max = SQ15x16(atof(command_data)); ack(); }
+    else if (strncmp(command_type, "router_var_mix", 14) == 0) {
+      // Expected format: detune:40,anti:30,circ:30
+      uint8_t d=0,a=0,c=0; bool ok=false;
+      int dd, aa, cc;
+      if (sscanf(command_data, "detune:%d,anti:%d,circ:%d", &dd, &aa, &cc) == 3) {
+        if (dd>=0 && aa>=0 && cc>=0 && dd+aa+cc>0) { d=uint8_t(dd); a=uint8_t(aa); c=uint8_t(cc); ok=true; }
+      }
+      if (ok) { g_router_var_mix_detune=d; g_router_var_mix_anti=a; g_router_var_mix_circ=c; ack(); }
+      else { bad_command(command_type, command_data); }
+    }
+    else if (strcmp(command_type, "router_status") == 0) {
+      tx_begin();
+      USBSerial.println("ROUTER STATUS (Agent B)");
+#if ENABLE_ROUTER_FSM
+      USBSerial.print("enabled: "); USBSerial.println(g_router_enabled ? "true":"false");
+#else
+      USBSerial.println("enabled: false (ENABLE_ROUTER_FSM=0)");
+#endif
+      USBSerial.print("dwell_min/max: "); USBSerial.print(g_router_dwell_min_beats); USBSerial.print("/"); USBSerial.println(g_router_dwell_max_beats);
+      USBSerial.print("cooldown_min/max: "); USBSerial.print(g_router_cooldown_min_beats); USBSerial.print("/"); USBSerial.println(g_router_cooldown_max_beats);
+      USBSerial.print("onset_prob%: "); USBSerial.println(g_router_onset_prob_percent);
+      USBSerial.print("novelty_thresh: "); USBSerial.println(float(g_router_novelty_thresh), 3);
+      USBSerial.print("vu_delta: "); USBSerial.println(float(g_router_vu_delta_thresh), 3);
+      USBSerial.print("var_mix detune/anti/circ %: "); USBSerial.print(g_router_var_mix_detune); USBSerial.print("/"); USBSerial.print(g_router_var_mix_anti); USBSerial.print("/"); USBSerial.println(g_router_var_mix_circ);
+      USBSerial.print("detune_max: "); USBSerial.println(float(g_router_detune_max), 3);
+      USBSerial.print("circ_frames_max: "); USBSerial.println(g_router_circ_frames_max);
+      USBSerial.print("balance min/max: "); USBSerial.print(float(g_router_balance_min), 2); USBSerial.print("/"); USBSerial.println(float(g_router_balance_max), 2);
+      // Cadence counters (last 4s window; reset occurs in coordinator)
+      USBSerial.print("cadence trans/var (last window): "); USBSerial.print(g_router_state.cadence_transitions); USBSerial.print("/"); USBSerial.println(g_router_state.cadence_variations);
+      USBSerial.print("last reason/dwell: "); USBSerial.print(g_router_last_reason); USBSerial.print("/"); USBSerial.println(g_router_last_dwell_beats);
+      tx_end();
+    }
+    else if (strcmp(command_type, "router_enabled") == 0) {
+#if ENABLE_ROUTER_FSM
+      bool good = false;
+      if (strcmp(command_data, "on") == 0 || strcmp(command_data, "true") == 0) {
+        g_router_enabled = true; good = true;
+      } else if (strcmp(command_data, "off") == 0 || strcmp(command_data, "false") == 0) {
+        g_router_enabled = false; good = true;
+      }
+      if (good) { ack(); } else { bad_command(command_type, command_data); }
+#else
+      tx_begin(true);
+      USBSerial.println("router FSM disabled (ENABLE_ROUTER_FSM=0)");
+      tx_end(true);
+#endif
+    }
+    else if (strcmp(command_type, "router_plan") == 0) {
+      const CouplingPlan& p = g_coupling_plan;
+      tx_begin();
+      USBSerial.print("PLAN primary/secondary: ");
+      USBSerial.print(mode_names + (p.primary_mode * 32));
+      USBSerial.print("|");
+      USBSerial.println(mode_names + (p.secondary_mode * 32));
+      USBSerial.print("anti_phase: "); USBSerial.println(p.anti_phase ? "true" : "false");
+      USBSerial.print("hue_detune: "); USBSerial.println(float(p.hue_detune), 3);
+      USBSerial.print("phase_offset: "); USBSerial.println(float(p.phase_offset), 3);
+      USBSerial.print("balance: "); USBSerial.println(float(p.intensity_balance), 3);
+      tx_end();
+    }
+    else if (strcmp(command_type, "router_pairs") == 0) {
+      tx_begin();
+      for (uint8_t i = 0; i < NUM_COMPLEMENTARY_PAIRS; i++) {
+        uint8_t a = COMPLEMENTARY_PAIRS[i][0];
+        uint8_t b = COMPLEMENTARY_PAIRS[i][1];
+        USBSerial.print(i); USBSerial.print(": ");
+        USBSerial.print(mode_names + (a * 32));
+        USBSerial.print(" | ");
+        USBSerial.println(mode_names + (b * 32));
+      }
       tx_end();
     }
     

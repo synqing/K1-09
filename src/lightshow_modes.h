@@ -2,6 +2,7 @@
 #define LIGHTSHOW_MODES_H
 
 #include <Arduino.h>
+#include <algorithm>
 #include <FastLED.h>
 #include <FixedPoints.h>
 #include <FixedPointsCommon.h>
@@ -116,6 +117,18 @@ inline void light_mode_gdft() {
     // Place calculated color in the second half of the buffer initially
     leds_16[i + (NATIVE_RESOLUTION / 2)] = hsv(led_hue + bin * SQ15x16(0.050), frame_config.SATURATION, bin);
   }
+
+  // Apply secondary temporal offset as a small circulate within the computed half
+  #if ENABLE_TEMPORAL_GDFT_CIRCULATE
+  if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+    // Map phase_offset (0..~0.05) to 0..3 pixels circulate
+    int16_t pix = int16_t((frame_config.coordinator_phase_offset * SQ15x16((NATIVE_RESOLUTION/2))).getInteger());
+    if (pix > 3) pix = 3; if (pix < 0) pix = 0;
+    if (pix != 0) {
+      rotate_region_16(leds_16, NATIVE_RESOLUTION/2, NATIVE_RESOLUTION/2, pix);
+    }
+  }
+  #endif
 
   // Clear the first half before mirroring
   memset(leds_16, 0, sizeof(CRGB16) * (NATIVE_RESOLUTION / 2));
@@ -238,8 +251,18 @@ inline void light_mode_vu_dot() {
 
   SQ15x16 brightness = sqrt(float(dot_pos_smooth));
 
-  set_dot_position(RESERVED_DOTS + 0, dot_pos_smooth * 0.5 + 0.5);
-  set_dot_position(RESERVED_DOTS + 1, 0.5 - dot_pos_smooth * 0.5);
+  SQ15x16 pos_a = dot_pos_smooth * 0.5 + 0.5;
+  SQ15x16 pos_b = 0.5 - dot_pos_smooth * 0.5;
+  #if ENABLE_TEMPORAL_VU_DOT_SHIFT
+  if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+    SQ15x16 d = frame_config.coordinator_phase_offset * SQ15x16(0.10);
+    pos_a += d; pos_b += d;
+    if (pos_a < 0.0) { pos_a = 0.0; } if (pos_a > 1.0) { pos_a = 1.0; }
+    if (pos_b < 0.0) { pos_b = 0.0; } if (pos_b > 1.0) { pos_b = 1.0; }
+  }
+  #endif
+  set_dot_position(RESERVED_DOTS + 0, pos_a);
+  set_dot_position(RESERVED_DOTS + 1, pos_b);
 
   clear_leds();
   //fade_grayscale(0.15);
@@ -318,6 +341,16 @@ inline void light_mode_kaleidoscope() {
     uint32_t y_pos_r = pos_r;
     uint32_t y_pos_g = pos_g;
     uint32_t y_pos_b = pos_b;
+
+    // Apply a tiny temporal offset for secondary via additional phase ticks
+    #if ENABLE_TEMPORAL_KALEIDOSCOPE_PHASE
+    if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+      uint32_t phase_ticks = uint32_t((frame_config.coordinator_phase_offset * SQ15x16(2048)).getInteger());
+      y_pos_r += phase_ticks;
+      y_pos_g += phase_ticks;
+      y_pos_b += phase_ticks;
+    }
+    #endif
 
     // Scale noise coordinate space based on position in the half-strip
     uint32_t i_mapped = i + 18; // Keep offset? Maybe adjust
@@ -426,7 +459,17 @@ inline void light_mode_kaleidoscope() {
 
 inline void light_mode_chromagram_gradient() {
   // Loop through the second half of the strip
-  for (uint16_t i = 0; i < (NATIVE_RESOLUTION / 2); i++) {
+  const uint16_t half = (NATIVE_RESOLUTION / 2);
+  // Derive a tiny circulate offset in pixels for secondary
+  int16_t pix_offset = 0;
+  #if ENABLE_TEMPORAL_CHROMA_GRAD_CIRCULATE
+  if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+    pix_offset = int16_t((frame_config.coordinator_phase_offset * SQ15x16(half)).getInteger());
+    if (pix_offset > 3) { pix_offset = 3; }
+    if (pix_offset < 0) { pix_offset = 0; }
+  }
+  #endif
+  for (uint16_t i = 0; i < half; i++) {
     SQ15x16 prog = (SQ15x16)i / (SQ15x16)(NATIVE_RESOLUTION / 2 -1); // Progress across the half strip
     SQ15x16 note_magnitude = interpolate(prog, chromagram_smooth, 12) * 0.9 + 0.1;
 
@@ -478,10 +521,10 @@ inline void light_mode_chromagram_gradient() {
 
     CRGB16 col = hsv_or_palette(led_hue, CONFIG.SATURATION, note_magnitude * note_magnitude);
 
-    // Write to the second half of the strip
-    leds_16[(NATIVE_RESOLUTION / 2) + i] = col;
-    // Mirror to the first half of the strip
-    leds_16[(NATIVE_RESOLUTION / 2) - 1 - i] = col;
+    // Write to the second half with optional circulate, then mirror to first half
+    uint16_t j = (i + pix_offset) % half;
+    leds_16[half + j] = col;
+    leds_16[half - 1 - j] = col;
   }
 }
 
@@ -517,8 +560,19 @@ inline void light_mode_chromagram_dots() {
 
     CRGB16 col = hsv_or_palette(led_hue, CONFIG.SATURATION, magnitude);
 
-    set_dot_position(RESERVED_DOTS + i * 2 + 0, magnitude * 0.45 + 0.5);
-    set_dot_position(RESERVED_DOTS + i * 2 + 1, 0.5 - magnitude * 0.45);
+    // Apply a tiny secondary temporal shift to dot positions (global circulate effect)
+    SQ15x16 base_pos_a = magnitude * 0.45 + 0.5;
+    SQ15x16 base_pos_b = 0.5 - magnitude * 0.45;
+    #if ENABLE_TEMPORAL_CHROMA_DOTS_SHIFT
+    if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+      SQ15x16 d = frame_config.coordinator_phase_offset * SQ15x16(0.10); // small shift
+      base_pos_a += d; base_pos_b += d;
+      if (base_pos_a < 0.0) base_pos_a = 0.0; if (base_pos_a > 1.0) base_pos_a = 1.0;
+      if (base_pos_b < 0.0) base_pos_b = 0.0; if (base_pos_b > 1.0) base_pos_b = 1.0;
+    }
+    #endif
+    set_dot_position(RESERVED_DOTS + i * 2 + 0, base_pos_a);
+    set_dot_position(RESERVED_DOTS + i * 2 + 1, base_pos_b);
 
     draw_dot(leds_16, RESERVED_DOTS + i * 2 + 0, col);
     draw_dot(leds_16, RESERVED_DOTS + i * 2 + 1, col);
@@ -551,8 +605,7 @@ inline void light_mode_bloom(CRGB16* leds_prev_buffer) { // Accept previous buff
 
   //-------------------------------------------------------
   // Calculate new color input based on chromagram
-  CRGB16 sum_color;
-  memset(&sum_color, 0, sizeof(CRGB16)); // Initialize sum_color
+  CRGB16 sum_color = {{0},{0},{0}};
 
   // Mix colors from strongest chromagram bins
   SQ15x16 total_magnitude = 0.0;
@@ -640,9 +693,18 @@ inline void light_mode_bloom(CRGB16* leds_prev_buffer) { // Accept previous buff
   final_insert_color.g *= frame_config.PHOTONS;
   final_insert_color.b *= frame_config.PHOTONS;
 
-  // Insert the new color at the center of the strip
+  // Insert the new color near the center; allow a tiny secondary offset
   uint16_t center_idx1 = (NATIVE_RESOLUTION / 2) - 1;
   uint16_t center_idx2 = NATIVE_RESOLUTION / 2;
+  #if ENABLE_TEMPORAL_BLOOM_CENTER_SHIFT
+  if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+    int16_t shift = int16_t((frame_config.coordinator_phase_offset * SQ15x16(4)).getInteger()); // up to ~4 px
+    int16_t c1 = std::clamp<int16_t>(int16_t(center_idx1) + shift, 1, (NATIVE_RESOLUTION / 2) - 2);
+    int16_t c2 = std::clamp<int16_t>(int16_t(center_idx2) + shift, (NATIVE_RESOLUTION / 2) + 1, NATIVE_RESOLUTION - 2);
+    center_idx1 = static_cast<uint16_t>(c1);
+    center_idx2 = static_cast<uint16_t>(c2);
+  }
+  #endif
   leds_16[center_idx1] = final_insert_color;
   leds_16[center_idx2] = final_insert_color; // Insert in two center pixels for symmetry
 
@@ -728,10 +790,9 @@ inline void light_mode_quantum_collapse() {
       particle_positions[i] = spacing_variety * i + random(15) - 7;
       
       // Ensure valid range
-      if (particle_positions[i] >= NATIVE_RESOLUTION) 
+      if (particle_positions[i] >= NATIVE_RESOLUTION) {
         particle_positions[i] = NATIVE_RESOLUTION - 1;
-      if (particle_positions[i] < 0) 
-        particle_positions[i] = 0;
+      }
       
       // More natural velocity distribution - some fast, some slow, some nearly still
       float speed_factor = pow(random_float(), 2) * 3.0 + 0.5; // Non-linear distribution
@@ -1318,7 +1379,7 @@ inline void light_mode_quantum_collapse() {
     if (pos < NATIVE_RESOLUTION) {
       // Audio-reactive pulse with unique frequency
       float pulse_freq = 2.0 + i * 0.4 + sin(i * 0.7) * 0.5;
-      SQ15x16 pulse = SQ15x16(0.7) + SQ15x16(0.3) * sin(animation_phase * pulse_freq + i * 0.7);
+      SQ15x16 pulse = SQ15x16(0.7) + SQ15x16(0.3) * sin((animation_phase + float(frame_config.coordinator_phase_offset) * 0.5f) * pulse_freq + i * 0.7);
       
       // Audio boosts pulse
       pulse += audio_pulse * SQ15x16(0.4);
@@ -1332,7 +1393,7 @@ inline void light_mode_quantum_collapse() {
       SQ15x16 particle_hue = triad_hues[hue_idx];
       
       // Audio and energy affect hue slightly
-      float hue_shift = sin(animation_phase * 0.7 + i * 0.5) * 0.03 * float(audio_vu_level);
+      float hue_shift = sin((animation_phase + float(frame_config.coordinator_phase_offset) * 0.5f) * 0.7 + i * 0.5) * 0.03 * float(audio_vu_level);
       particle_hue += SQ15x16(hue_shift);
       
       // Normalize hue
@@ -1563,6 +1624,16 @@ inline void light_mode_waveform(CRGB16* leds_previous, CRGB16& last_color) { // 
   current_sum_color.g *= frame_config.PHOTONS;
   current_sum_color.b *= frame_config.PHOTONS;
   
+  // Use the chromagram color mix for the waveform; apply tiny temporal offset for secondary
+  if (frame_config.coordinator_is_secondary && frame_config.coordinator_phase_offset > SQ15x16(0)) {
+    // Slightly bias toward last_color based on phase_offset (acts like lag)
+    SQ15x16 alpha = frame_config.coordinator_phase_offset * SQ15x16(5.0); // 0..0.25
+    if (alpha > SQ15x16(0.25)) alpha = SQ15x16(0.25);
+    SQ15x16 one_minus = SQ15x16(1.0) - alpha;
+    current_sum_color.r = current_sum_color.r * one_minus + last_color.r * alpha;
+    current_sum_color.g = current_sum_color.g * one_minus + last_color.g * alpha;
+    current_sum_color.b = current_sum_color.b * one_minus + last_color.b * alpha;
+  }
   // Use the chromagram color mix for the waveform
   last_color = current_sum_color;
   // --- End Color Calculation ---
@@ -1611,6 +1682,8 @@ inline void light_mode_waveform(CRGB16* leds_previous, CRGB16& last_color) { // 
 
   int center = NATIVE_RESOLUTION / 2;
   float pos_f = center + amp * (NATIVE_RESOLUTION / 2.0f);
+  // Small phase-derived bias to desynchronize channels without buffer mutation
+  pos_f += float(frame_config.coordinator_phase_offset);
 
   // IMPLEMENTED FIX: Probabilistic sub-pixel positioning preserving single assignment principle
   // Extract fractional component for probabilistic threshold

@@ -1,8 +1,0 @@
-FROM ghcr.io/platformio/platformio-core:latest
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-pip graphviz clang-format && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir regex==2024.5.15 networkx==3.3 graphviz==0.20.3
-
-WORKDIR /workspace

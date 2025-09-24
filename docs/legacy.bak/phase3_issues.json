@@ -1,0 +1,104 @@
+{
+  "issues": [
+    {
+      "title": "Phase 3: Async LED double-buffer (two controllers, safe flips)",
+      "labels": ["mechanical", "a/v-core"],
+      "milestone": "Phase 3",
+      "dependencies": ["Phase 3: Establish pipeline boundary headers and module layout"],
+      "paths": ["src/output/**","include/output/**"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "rg -n \"busy|flip|front|back\" src include | wc -l",
+        "echo OK  # run-time asserts verify no write-while-busy",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "API differences across FastLED builds",
+      "rollback": "Disable async path via flag; fall back to synchronous send"
+    },
+    {
+      "title": "Phase 3: Static allocation plan (working/quantized/front/back for both channels)",
+      "labels": ["mechanical", "channel2"],
+      "milestone": "Phase 3",
+      "dependencies": ["Phase 3: Establish pipeline boundary headers and module layout"],
+      "paths": ["src/**","include/**"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "rg -n \"\\bnew\\b|delete\\[\\]\" src include | wc -l",
+        "echo OK  # should be zero in hot code",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "DRAM pressure if oversized",
+      "rollback": "Reduce scratch sizes; confirm 160 LED sizing guards"
+    },
+    {
+      "title": "Phase 3: Bounded I2S ring buffer with deadline fallback",
+      "labels": ["mechanical", "a/v-core"],
+      "milestone": "Phase 3",
+      "dependencies": ["Phase 3: Establish pipeline boundary headers and module layout"],
+      "paths": ["src/audio/**","include/audio/**"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "echo OK  # counters show misses without frame stall",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "Under-sized ring at high jitter",
+      "rollback": "Increase chunk count; raise soft deadline slightly"
+    },
+    {
+      "title": "Phase 3: Dual-Strip Coordinator surface + Operator library (pure)",
+      "labels": ["mechanical", "channel2"],
+      "milestone": "Phase 3",
+      "dependencies": ["Phase 3: Establish pipeline boundary headers and module layout"],
+      "paths": ["src/pipeline/visual/**","include/pipeline/visual/**"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "rg -n \"mirror|anti|circulate|complement\" src include | wc -l",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "Surface creep into mode internals",
+      "rollback": "Constrain operators to param/index transforms only"
+    },
+    {
+      "title": "Phase 3: Router FSM (pairs, dwell, cooldown, variation injectors)",
+      "labels": ["mechanical", "channel2", "a/v-core"],
+      "milestone": "Phase 3",
+      "dependencies": ["Phase 3: Dual-Strip Coordinator surface + Operator library (pure)"],
+      "paths": ["src/pipeline/visual/**","src/main.cpp"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "echo OK  # throttled logs show stable selections",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "Thrash if dwell too short",
+      "rollback": "Increase dwell; add pair blacklist on repeated toggles"
+    },
+    {
+      "title": "Phase 3: Uniform post-FX degrade (no channel gating)",
+      "labels": ["mechanical", "a/v-core", "channel2"],
+      "milestone": "Phase 3",
+      "dependencies": ["Phase 3: Dual-Strip Coordinator surface + Operator library (pure)"],
+      "paths": ["src/pipeline/visual/**","src/main.cpp"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "rg -n \"overrun|degrade\" src include | wc -l",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "Visible quality drop at extremes",
+      "rollback": "Narrow degraded FX set; shorten duration"
+    },
+    {
+      "title": "Phase 5: Optional current limiter (smoothed scaler; OFF by default)",
+      "labels": ["infra", "perf"],
+      "milestone": "Phase 5",
+      "dependencies": ["Phase 3: Uniform post-FX degrade (no channel gating)"],
+      "paths": ["src/output/**","src/pipeline/visual/**"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "echo OK  # bench rail voltage; confirm overhead <5%",
+        "sh -lc 'test -z \"$(git ls-files --cached analysis/** 2>/dev/null; git ls-files --cached compile_commands.json 2>/dev/null)\"'"
+      ],
+      "risk": "Mild desaturation at ceiling",
+      "rollback": "Leave disabled; remove callsite if undesired"
+    }
+  ]
+}

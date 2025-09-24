@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export authoritative audio/visual pipeline map as JSON.
 
-The data model mirrors `docs/firmware/pipelines.md` so that CI can verify
+The data model mirrors `docs/03.ssot/firmware-pipelines-ssot.md` so that CI can verify
 changes programmatically and future tooling (Task-Master, dashboards) can consume
 structured metadata.
 """

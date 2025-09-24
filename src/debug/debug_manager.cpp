@@ -105,13 +105,16 @@ void DebugManager::print_performance(float fps, uint32_t gdft_us, uint32_t heap,
                                    int bins, int active, float peak_hz) {
     USBSerial.printf("%s[PERF]%s FPS:%.1f GDFT:%luus HEAP:%lu CPU:%.1f%% BINS:%d/%d PEAK:%.0fHz%s\n",
                     DebugColors::PERF, DebugColors::DIM,
-                    fps, gdft_us, heap, cpu_pct, active, bins, peak_hz, DebugColors::RESET);
+                    fps,
+                    static_cast<unsigned long>(gdft_us),
+                    static_cast<unsigned long>(heap),
+                    cpu_pct, active, bins, peak_hz, DebugColors::RESET);
 }
 
 void DebugManager::print_s3_performance(float fps, uint32_t race_conditions) {
     USBSerial.printf("%s[S3 PERF]%s FPS:%.2f Race:%lu Target:120+%s\n",
                     DebugColors::PERF, DebugColors::DIM,
-                    fps, race_conditions, DebugColors::RESET);
+                    fps, static_cast<unsigned long>(race_conditions), DebugColors::RESET);
 }
 
 void DebugManager::print_color_shift(float novelty, float hue_pos, float speed) {

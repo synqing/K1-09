@@ -3,9 +3,18 @@
 #include "constants.h"
 #include <Arduino.h>  // For millis(), random()
 
+#if ARDUINO_USB_CDC_ON_BOOT
+#define ROUTER_SERIAL Serial
+#else
+#define ROUTER_SERIAL USBSerial
+#endif
+
 // Global coordinator instances
 CouplingPlan g_coupling_plan;
 RouterState g_router_state;
+bool g_router_enabled = true; // Agent B: freeze router plan when false
+uint8_t g_router_last_reason = 0;
+uint8_t g_router_last_dwell_beats = 0;
 
 void coordinator_init() {
     // Initialize coupling plan with safe default values that respect current configuration
@@ -24,6 +33,11 @@ void coordinator_init() {
     g_router_state.variation_pending = false;
     g_router_state.last_beat_time = 0;
     g_router_state.novelty_peak = SQ15x16(0.0);
+    // Cadence window initialization (Agent B)
+    g_router_state.cadence_window_ms_start = millis();
+    g_router_state.cadence_transitions = 0;
+    g_router_state.cadence_variations = 0;
+    g_router_state.last_variation_ms = 0;
 }
 
 CouplingPlan coordinator_update(RouterState& router,
@@ -31,52 +45,81 @@ CouplingPlan coordinator_update(RouterState& router,
                                 SQ15x16 audio_vu,
                                 uint32_t current_time_ms) {
     CouplingPlan plan;
-    
-    // Update router state based on audio features
-    router_update(router, novelty_curve_ptr, audio_vu, current_time_ms);
-    
-    // For Phase 1: Maintain current mode assignments to avoid breaking existing functionality
-    // Future enhancement: implement complementary pair selection
-    plan.primary_mode = CONFIG.LIGHTSHOW_MODE;
-    plan.secondary_mode = SECONDARY_LIGHTSHOW_MODE;
-    
-    // Apply variations if pending
-    if (router.variation_pending) {
-        plan.variation_type = random(NUM_OPERATOR_TYPES);
-        
-        switch (plan.variation_type) {
-            case OP_ANTI_PHASE:
-                plan.anti_phase = true;
-                plan.phase_offset = SQ15x16(0.5);
-                break;
-            case OP_HUE_DETUNE:
-                // Small hue detune: ±0.08 as specified in operating plan
-                plan.hue_detune = SQ15x16((random(17) - 8) / 100.0); // ±0.08
-                break;
-            case OP_CIRCULATE:
-                plan.phase_offset = SQ15x16(random(4) / 10.0); // 0.0-0.3
-                break;
-            default:
-                plan.anti_phase = false;
-                plan.phase_offset = SQ15x16(0.0);
-                plan.hue_detune = SQ15x16(0.0);
-                break;
-        }
-        
-        router.variation_pending = false;
-    } else {
-        // Default: minimal variations for organic feel
+
+#if !ENABLE_ROUTER_FSM
+    (void)novelty_curve_ptr;
+    (void)audio_vu;
+    (void)current_time_ms;
+#endif
+
+#if ENABLE_ROUTER_FSM
+    const bool router_active = g_router_enabled;
+#else
+    const bool router_active = false;
+#endif
+
+    if (!router_active) {
+        plan.primary_mode = CONFIG.LIGHTSHOW_MODE;
+        plan.secondary_mode = SECONDARY_LIGHTSHOW_MODE;
+        plan.phase_offset = SQ15x16(0.0);
         plan.anti_phase = false;
-        plan.phase_offset = SQ15x16(random(11) / 100.0); // 0.0-0.1
-        plan.hue_detune = SQ15x16((random(9) - 4) / 100.0); // ±0.04
+        plan.hue_detune = SQ15x16(0.0);
         plan.variation_type = OP_MIRROR;
+        plan.intensity_balance = SQ15x16(0.5);
+        g_router_last_reason = ROUTER_NONE;
+        g_router_last_dwell_beats = 0;
+        return plan;
     }
-    
-    // Balance intensity based on audio energy
-    plan.intensity_balance = SQ15x16(0.5) + (audio_vu - SQ15x16(0.5)) * SQ15x16(0.2);
-    if (plan.intensity_balance < SQ15x16(0.3)) plan.intensity_balance = SQ15x16(0.3);
-    if (plan.intensity_balance > SQ15x16(0.7)) plan.intensity_balance = SQ15x16(0.7);
-    
+
+#if ENABLE_ROUTER_FSM
+    RouterReason reason = ROUTER_NONE;
+    uint8_t dwell_beats = 0;
+    // Drive FSM to determine pair selection and variations
+    router_fsm_tick(novelty_curve_ptr, audio_vu, current_time_ms, router, plan, reason, dwell_beats);
+
+    if (reason != ROUTER_NONE && ROUTER_SERIAL) {
+        g_router_last_reason = (uint8_t)reason;
+        g_router_last_dwell_beats = dwell_beats;
+        const char* p_name = mode_names + (plan.primary_mode * 32);
+        const char* s_name = mode_names + (plan.secondary_mode * 32);
+        const char* reason_str = (reason == ROUTER_ONSET) ? "onset" :
+                                 (reason == ROUTER_TIMEOUT) ? "timeout" :
+                                 (reason == ROUTER_COOLDOWN_END) ? "cooldown" : "none";
+        int offset_frames = int(plan.phase_offset * SQ15x16(60));
+        if (offset_frames < 0) offset_frames = 0;
+        ROUTER_SERIAL.printf("ROUTER pair=%s|%s reason=%s dwell=%u/8 var=%s,hue%+0.2f,offset=%d\n",
+                             p_name ? p_name : "?",
+                             s_name ? s_name : "?",
+                             reason_str,
+                             (unsigned)dwell_beats,
+                             (plan.variation_type == OP_ANTI_PHASE ? "anti-phase" :
+                              plan.variation_type == OP_CIRCULATE ? "circulate" :
+                              plan.variation_type == OP_HUE_DETUNE ? "hue-detune" : "mirror"),
+                             float(plan.hue_detune),
+                             offset_frames);
+    }
+
+    if (ROUTER_SERIAL) {
+        uint32_t win_ms = current_time_ms - router.cadence_window_ms_start;
+        if (win_ms >= 4000) {
+            ROUTER_SERIAL.printf("ROUTER cadence trans=%u var=%u window=%.1fs\n",
+                                 (unsigned)router.cadence_transitions,
+                                 (unsigned)router.cadence_variations,
+                                 win_ms / 1000.0f);
+            router.cadence_window_ms_start = current_time_ms;
+            router.cadence_transitions = 0;
+            router.cadence_variations = 0;
+        }
+    }
+#endif
+
+    if (plan.primary_mode >= NUM_MODES) {
+        plan.primary_mode = CONFIG.LIGHTSHOW_MODE;
+    }
+    if (plan.secondary_mode >= NUM_MODES) {
+        plan.secondary_mode = SECONDARY_LIGHTSHOW_MODE;
+    }
+
     return plan;
 }
 
@@ -188,3 +231,4 @@ SQ15x16 operator_temporal_offset(SQ15x16 base_value, SQ15x16 phase_offset) {
     
     return result;
 }
+#undef ROUTER_SERIAL

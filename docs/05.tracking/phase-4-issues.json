@@ -1,0 +1,48 @@
+{
+  "issues": [
+    {
+      "title": "Phase 4: Author pipelines SSOT doc (docs/03.ssot/firmware-pipelines-ssot.md)",
+      "labels": ["documentation", "phase4", "agent-a"],
+      "milestone": "Phase 4",
+      "paths": ["docs/03.ssot/firmware-pipelines-ssot.md", "docs/99.reference/visual-pipeline-overview.md"],
+      "acceptance_checks": [
+        "./agent_runner.sh pio run",
+        "rg -n \"TODO|TBD\" docs/03.ssot/firmware-pipelines-ssot.md docs/99.reference/visual-pipeline-overview.md"
+      ],
+      "notes": "Capture dual-strip data flow, reference current multi-core implementation, and document single-core target assumptions."
+    },
+    {
+      "title": "Phase 4: Scheduling SSOT (docs/03.ssot/firmware-scheduling-ssot.md)",
+      "labels": ["documentation", "phase4", "agent-a"],
+      "milestone": "Phase 4",
+      "paths": ["docs/03.ssot/firmware-scheduling-ssot.md"],
+      "acceptance_checks": [
+        "rg -n \"TODO|TBD\" docs/03.ssot/firmware-scheduling-ssot.md",
+        "rg -n \"g_rb_reads\" docs/03.ssot/firmware-scheduling-ssot.md"
+      ],
+      "notes": "Document Phase A–E responsibilities, task affinity, watchdog feeds, and instrumentation touchpoints."
+    },
+    {
+      "title": "Phase 4: Magic numbers catalogue (docs/03.ssot/firmware-magic-numbers-ssot.md)",
+      "labels": ["documentation", "phase4", "agent-b"],
+      "milestone": "Phase 4",
+      "paths": ["docs/03.ssot/firmware-magic-numbers-ssot.md"],
+      "acceptance_checks": [
+        "rg -n \"CONFIG.SAMPLES_PER_CHUNK\" docs/03.ssot/firmware-magic-numbers-ssot.md",
+        "rg -n \"Watchdog\" docs/03.ssot/firmware-magic-numbers-ssot.md"
+      ],
+      "notes": "List tunables with file:line references and safe adjustment guidance."
+    },
+    {
+      "title": "Phase 4: Documentation tooling & PR checklist update",
+      "labels": ["infrastructure", "phase4", "agent-b"],
+      "milestone": "Phase 4",
+      "paths": [".github", "docs/03.ssot"],
+      "acceptance_checks": [
+        "test ! -f analysis/PLACEHOLDER",
+        "rg -n \"SSOT docs reviewed\" .github"
+      ],
+      "notes": "Introduce doc-sync checklist entry and codify doc lint command (Vale or markdownlint) for contributors."
+    }
+  ]
+}

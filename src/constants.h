@@ -35,6 +35,94 @@
 #define SECONDARY_LED_COUNT_CONST 160
 #define SECONDARY_LED_COLOR_ORDER_CONST GRB
 
+// Runtime feature gates
+#ifndef ENABLE_INPUTS_RUNTIME
+#define ENABLE_INPUTS_RUNTIME 0
+#endif
+#ifndef ENABLE_P2P_RUNTIME
+#define ENABLE_P2P_RUNTIME 0
+#endif
+#ifndef ENABLE_LOOKAHEAD_SMOOTHING
+#define ENABLE_LOOKAHEAD_SMOOTHING 0
+#endif
+
+// Router FSM (Phase 3) — disabled until beat tracking lands
+#ifndef ENABLE_ROUTER_FSM
+#define ENABLE_ROUTER_FSM 0
+#endif
+
+// Beat/Tempo tracker (ported from Emotiscope) — scaffolding disabled by default
+#ifndef ENABLE_TEMPO_TRACKER
+#define ENABLE_TEMPO_TRACKER 0
+#endif
+
+// Tempo tracker parameters (decoupled names to avoid collisions)
+#ifndef TEMPO_NUM_TEMPI
+#define TEMPO_NUM_TEMPI 96
+#endif
+#ifndef TEMPO_LOW_BPM
+#define TEMPO_LOW_BPM 48
+#endif
+#ifndef TEMPO_HIGH_BPM
+#define TEMPO_HIGH_BPM (TEMPO_LOW_BPM + TEMPO_NUM_TEMPI)
+#endif
+#ifndef TEMPO_LOG_HZ
+#define TEMPO_LOG_HZ 50  // novelty/VU log rate (Hz)
+#endif
+#ifndef TEMPO_HISTORY_LENGTH
+#define TEMPO_HISTORY_LENGTH 1024  // 50 Hz for ~20.48 seconds
+#endif
+#ifndef TEMPO_BEAT_SHIFT
+#define TEMPO_BEAT_SHIFT 0.16f  // 16% phase shift
+#endif
+
+// Phase 3 operator toggles (compile-time). Default ON; disable for A/B testing.
+#ifndef ENABLE_DUAL_OPS_ANTIPHASE_IN_SYNTHESIS
+#define ENABLE_DUAL_OPS_ANTIPHASE_IN_SYNTHESIS 1
+#endif
+#ifndef ENABLE_DUAL_OPS_TEMPORAL_BLEND
+#define ENABLE_DUAL_OPS_TEMPORAL_BLEND 1
+#endif
+#ifndef ENABLE_TEMPORAL_GDFT_CIRCULATE
+#define ENABLE_TEMPORAL_GDFT_CIRCULATE 1
+#endif
+#ifndef ENABLE_TEMPORAL_KALEIDOSCOPE_PHASE
+#define ENABLE_TEMPORAL_KALEIDOSCOPE_PHASE 1
+#endif
+#ifndef ENABLE_TEMPORAL_BLOOM_CENTER_SHIFT
+#define ENABLE_TEMPORAL_BLOOM_CENTER_SHIFT 1
+#endif
+#ifndef ENABLE_TEMPORAL_CHROMA_GRAD_CIRCULATE
+#define ENABLE_TEMPORAL_CHROMA_GRAD_CIRCULATE 1
+#endif
+#ifndef ENABLE_TEMPORAL_CHROMA_DOTS_SHIFT
+#define ENABLE_TEMPORAL_CHROMA_DOTS_SHIFT 1
+#endif
+#ifndef ENABLE_TEMPORAL_VU_DOT_SHIFT
+#define ENABLE_TEMPORAL_VU_DOT_SHIFT 1
+#endif
+
+// QoS safety guards
+#ifndef ENABLE_QOS_HYSTERESIS
+#define ENABLE_QOS_HYSTERESIS 1
+#endif
+#ifndef QOS_HYSTERESIS_MARGIN_US
+#define QOS_HYSTERESIS_MARGIN_US 250
+#endif
+#ifndef ENABLE_QOS_LED_FPS_GUARD
+#define ENABLE_QOS_LED_FPS_GUARD 1
+#endif
+
+// Current limiter (Phase 5 scaffold)
+#ifndef ENABLE_CURRENT_LIMITER
+#define ENABLE_CURRENT_LIMITER 1
+#endif
+// Per-channel max current (mA) at full white for given LED package.
+// Default 20 mA aligns with classic WS2812B 5050 package (3 channels -> ~60 mA/pixel at 255,255,255).
+#ifndef CURRENT_LIMITER_MA_PER_CHANNEL
+#define CURRENT_LIMITER_MA_PER_CHANNEL 20.0f
+#endif
+
 #define MAX_DOTS 320
 
 enum reserved_dots {

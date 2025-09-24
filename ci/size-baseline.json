@@ -1,0 +1,6 @@
+{
+  "flash_bytes": 879200,
+  "ram_bytes": 1124789,
+  "tolerance_percent": 5.0,
+  "notes": "Baseline captured via 'pio run -t size' after single-core integration (FastLED 3.10.2)."
+}

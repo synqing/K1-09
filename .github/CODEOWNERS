@@ -1,0 +1,10 @@
+# Docs ownership
+docs/** @spectrasynq
+
+# Tempo work
+docs/tempo/** @spectrasynq
+src/tempo/** @spectrasynq
+
+# Router/Coordinator
+src/dual_* @spectrasynq
+

@@ -1,0 +1,23 @@
+name: docs-lint
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docs/**.md'
+      - '.github/workflows/docs-lint.yml'
+      - '.markdownlint.json'
+
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli
+      - name: Lint docs
+        run: |
+          markdownlint "docs/**/*.md" --ignore "docs/legacy.bak" --config .markdownlint.json

@@ -139,8 +139,9 @@ void setup() {
   init_performance_trace(TRACE_CAT_LED | TRACE_CAT_PERF | TRACE_CAT_CRITICAL | TRACE_CAT_ERROR);
   set_trace_level(TRACE_LEVEL_DEBUG);
   set_trace_categories(TRACE_CAT_LED | TRACE_CAT_PERF | TRACE_CAT_CRITICAL | TRACE_CAT_ERROR);
+  // Single-core mandate: run trace consumer on Core 0 (cooperative, low priority)
   xTaskCreatePinnedToCore(trace_consumer_task, "trace_consumer", 4096, nullptr,
-                          tskIDLE_PRIORITY, nullptr, 1);
+                          tskIDLE_PRIORITY, nullptr, 0);
 
   // CRITICAL DEBUG: Test if execution continues after init_system()
   // Only print if USB serial is available (external power may not have USB)
@@ -202,20 +203,9 @@ void setup() {
   // Prepare dual-strip coordinator now that core state is initialized
   coordinator_init();
 
+  // Single-core rendering: no LED thread. Rendering now runs in Phase C/D of main_loop_core0 on Core 0.
   if (USBSerial) {
-    USBSerial.println("DEBUG: About to create LED thread...");
-    USBSerial.flush();
-  }
-  
-  // CRITICAL PERFORMANCE FIX: Move LED rendering to Core 1.
-  // The audio pipeline is running on Core 0. By moving the LED thread to the
-  // other core, we distribute the workload, reduce contention, and significantly
-  // improve performance and stability.
-  // Raise LED task priority to reduce render jitter and avoid idle sleeps
-  xTaskCreatePinnedToCore(led_thread, "led_task", 8192, NULL, tskIDLE_PRIORITY + 3, &led_task, 1);
-  
-  if (USBSerial) {
-    USBSerial.println("DEBUG: LED thread created successfully on Core 1!");
+    USBSerial.println("DEBUG: Single-core mode enabled; rendering on Core 0 Phase C/D");
     USBSerial.flush();
   }
   
@@ -254,8 +244,14 @@ void main_loop_core0() {
   static bool first_loop = true;
   static uint32_t a_time_acc_us = 0;
   static uint32_t b_time_acc_us = 0;
+  static uint32_t c_time_acc_us = 0;
+  static uint32_t d_time_acc_us = 0;
+  static uint32_t cd_frames = 0;
   static uint32_t metrics_win_start_ms = 0;
   static uint32_t metrics_frames = 0;
+  static uint32_t wdt_b_feeds = 0, wdt_c_feeds = 0, wdt_d_feeds = 0;
+  static uint32_t last_show_arm_us = 0;
+  static uint32_t last_wire_us = 0;
   if (first_loop) {
     if (USBSerial) {
       USBSerial.println("DEBUG: Entered main loop!");
@@ -359,8 +355,10 @@ void main_loop_core0() {
   uint32_t t_after_B = micros();
   // WDT feed after Phase B (audio)
   esp_task_wdt_reset();
+  wdt_b_feeds++;
   // WDT feed after Phase B (audio)
   esp_task_wdt_reset();
+  wdt_b_feeds++;
 
   // COLOR SHIFT PROCESSING [2025-09-20] - Simplified logic
   // palettes_bridge.h now handles all palette protection internally
@@ -399,14 +397,164 @@ void main_loop_core0() {
     // Peek at upcoming frames to study/prevent flickering
   #endif
 
+  // ---- Phase C: Render (single-core) ----
   function_id = 8;
   g_coupling_plan = coordinator_update(g_router_state,
                                        novelty_curve,
                                        audio_vu_level,
                                        millis());
 
-  function_id = 8;
-  log_fps(t_now_us);  // (system.h)
+  uint32_t t_c_start = micros();
+  begin_frame();
+
+  // Cache CONFIG values at start of frame
+  cache_frame_config();
+
+  if (mode_transition_queued == true || noise_transition_queued == true) {
+    run_transition_fade();
+  }
+
+  get_smooth_spectrogram();
+  make_smooth_chromagram();
+
+  // Render the primary LED strip using Router-selected mode
+  frame_config.coordinator_is_secondary = false;
+  if (frame_config.coordinator_primary_mode == LIGHT_MODE_GDFT) {
+    light_mode_gdft();
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_GDFT_CHROMAGRAM) {
+    light_mode_chromagram_gradient();
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_GDFT_CHROMAGRAM_DOTS) {
+    light_mode_chromagram_dots();
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_BLOOM) {
+    light_mode_bloom(leds_16_prev);
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_VU_DOT) {
+    light_mode_vu_dot();
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_KALEIDOSCOPE) {
+    light_mode_kaleidoscope();
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_QUANTUM_COLLAPSE) {
+    light_mode_quantum_collapse();
+  } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_WAVEFORM) {
+    // Seed primary LED buffer for trails
+    memcpy(leds_16, leds_16_prev, sizeof(CRGB16) * NATIVE_RESOLUTION);
+    // Call waveform with primary state buffers/variables
+    light_mode_waveform(leds_16_prev, waveform_last_color_primary);
+    // Update primary previous buffer for next frame
+    memcpy(leds_16_prev, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
+  }
+
+  extern volatile uint8_t g_last_effective_prism_primary;
+  if (CONFIG.PRISM_COUNT > 0) {
+    uint8_t min_prism = CONFIG.PRISM_COUNT;
+    if (SECONDARY_PRISM_COUNT < min_prism) min_prism = SECONDARY_PRISM_COUNT;
+    uint8_t effective_prism = (g_qos_prism_trim >= min_prism) ? 0 : (min_prism - g_qos_prism_trim);
+    apply_prism_effect(effective_prism, 0.25);
+    g_last_effective_prism_primary = effective_prism;
+  } else {
+    g_last_effective_prism_primary = 0;
+  }
+
+  if (CONFIG.BULB_OPACITY > 0.00) {
+    render_bulb_cover();
+  }
+
+  // Secondary channel (no CONFIG mutation) — render via per-frame snapshot
+  // Phase 3 parity guard: ensure secondary is always enabled
+  if (!ENABLE_SECONDARY_LEDS) {
+    ENABLE_SECONDARY_LEDS = true;
+    if (USBSerial) USBSerial.println("PHASE3: Enforcing dual-strip parity (C path)");
+  }
+  if (ENABLE_SECONDARY_LEDS) {
+    // Save primary buffer and frame snapshot
+    CRGB16 primary_buffer[NATIVE_RESOLUTION];
+    memcpy(primary_buffer, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
+    struct cached_config saved_fc = frame_config;
+
+    // Build a secondary per-frame view for modes that read frame_config
+    frame_config.PHOTONS = SECONDARY_PHOTONS;
+    frame_config.CHROMA  = SECONDARY_CHROMA;
+    frame_config.MOOD    = SECONDARY_MOOD;
+    frame_config.coordinator_is_secondary = true;
+
+    // Seed secondary buffer from previous secondary frame
+    memcpy(leds_16, leds_16_prev_secondary, sizeof(CRGB16) * NATIVE_RESOLUTION);
+
+    // Anti-phase handled inside synthesis (no output reversal)
+    if (frame_config.coordinator_secondary_mode == LIGHT_MODE_GDFT) {
+      light_mode_gdft();
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_GDFT_CHROMAGRAM) {
+      light_mode_chromagram_gradient();
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_GDFT_CHROMAGRAM_DOTS) {
+      light_mode_chromagram_dots();
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_BLOOM) {
+      light_mode_bloom(leds_16_prev_secondary);
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_VU_DOT) {
+      light_mode_vu_dot();
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_KALEIDOSCOPE) {
+      light_mode_kaleidoscope();
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_QUANTUM_COLLAPSE) {
+      light_mode_quantum_collapse();
+    } else if (frame_config.coordinator_secondary_mode == LIGHT_MODE_WAVEFORM) {
+      light_mode_waveform(leds_16_prev_secondary, waveform_last_color_secondary);
+      memcpy(leds_16_prev_secondary, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
+    }
+
+    // Apply anti-phase mapping and small temporal offset for secondary inside synthesis stage
+    apply_antiphase_if_secondary(leds_16);
+    apply_temporal_offset_if_secondary(leds_16, leds_16_prev_secondary);
+
+    extern volatile uint8_t g_last_effective_prism_secondary;
+    if (SECONDARY_PRISM_COUNT > 0) {
+      uint8_t min_prism = CONFIG.PRISM_COUNT;
+      if (SECONDARY_PRISM_COUNT < min_prism) min_prism = SECONDARY_PRISM_COUNT;
+      uint8_t effective_prism = (g_qos_prism_trim >= min_prism) ? 0 : (min_prism - g_qos_prism_trim);
+      apply_prism_effect(effective_prism, 0.25);
+      g_last_effective_prism_secondary = effective_prism;
+    } else {
+      g_last_effective_prism_secondary = 0;
+    }
+
+    // Save secondary pattern
+    memcpy(leds_16_secondary, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
+    clip_led_values(leds_16_secondary);
+
+    // Restore primary buffer and frame snapshot
+    memcpy(leds_16, primary_buffer, sizeof(CRGB16) * NATIVE_RESOLUTION);
+    frame_config = saved_fc;
+  }
+
+  publish_frame();
+  uint32_t t_after_c = micros();
+  // WDT feed after Phase C (render)
+  esp_task_wdt_reset();
+  wdt_c_feeds++;
+
+  // ---- Phase D: Show (LED output) ----
+  // Conservative busy fence: avoid arming show faster than last measured wire time
+  if (last_wire_us > 0) {
+    while ((micros() - last_show_arm_us) < last_wire_us) {
+      taskYIELD();
+    }
+  }
+  uint32_t t_before_show = micros();
+  show_leds();
+  uint32_t t_after_show = micros();
+  last_wire_us = (t_after_show - t_before_show);
+  last_show_arm_us = t_before_show;
+  // WDT feed after Phase D (output)
+  esp_task_wdt_reset();
+  wdt_d_feeds++;
+
+  // Update LED FPS (EMA)
+  LED_FPS = 0.95 * LED_FPS + 0.05 * (1000000.0 / (esp_timer_get_time() - last_frame_us));
+  last_frame_us = esp_timer_get_time();
+
+  // ---- Phase E: Upkeep (metrics/logs) ----
+  // Incorporate Phase C/D timings into once/4s report below
+  uint32_t t_c_us = (t_after_c - t_c_start);
+  uint32_t t_d_us = (t_after_show - t_before_show);
+  c_time_acc_us += t_c_us;
+  d_time_acc_us += t_d_us;
+  cd_frames++;
   // Log the audio system FPS
   
   // Run diagnostics if enabled (DISABLED - was killing performance)
@@ -457,7 +605,7 @@ void main_loop_core0() {
 
   // REMOVED: Useless function timing debug that just prints zeros
   
-  // ---- Accumulate per-phase timings and emit once/sec summary ----
+  // ---- Accumulate per-phase timings and emit once/4s summary ----
   metrics_frames++;
   a_time_acc_us += (t_after_A - t_loop_start);
   b_time_acc_us += (t_after_B - t_after_A);
@@ -465,17 +613,47 @@ void main_loop_core0() {
   if ((t_now - metrics_win_start_ms) >= 4000) { // throttle to ~0.25 Hz
     uint32_t a_avg = (metrics_frames > 0) ? (a_time_acc_us / metrics_frames) : 0;
     uint32_t b_avg = (metrics_frames > 0) ? (b_time_acc_us / metrics_frames) : 0;
+    uint32_t c_avg = (cd_frames > 0) ? (c_time_acc_us / cd_frames) : 0;
+    uint32_t d_avg = (cd_frames > 0) ? (d_time_acc_us / cd_frames) : 0;
+
+    // Publish A/B averages for consolidated METRICS line
+    g_avg_a_us = a_avg;
+    g_avg_b_us = b_avg;
+    g_wdt_b_feeds_window = wdt_b_feeds;
+    g_last_c_avg_us = c_avg;
+    g_last_d_avg_us = d_avg;
+
     if (USBSerial) {
-      USBSerial.printf("METRICS A(us)=%lu B(us)=%lu rb=%lu/%lu\n",
-                       (unsigned long)a_avg,
-                       (unsigned long)b_avg,
-                       (unsigned long)g_rb_reads,
-                       (unsigned long)g_rb_deadline_miss);
-      // Once/second FPS summary (system loop and LED flips)
-      USBSerial.printf("FPS sys=%.1f led=%.1f\n", SYSTEM_FPS, LED_FPS);
+      float a_ms = a_avg / 1000.0f;
+      float b_ms = b_avg / 1000.0f;
+      float c_ms = c_avg / 1000.0f;
+      float d_ms = d_avg / 1000.0f;
+      float e_ms = 0.0f; // not tracked separately
+      float overlap_pct = (c_avg + d_avg) ? (100.0f * float(d_avg) / float(c_avg + d_avg)) : 0.0f;
+      uint32_t wdt_total = g_wdt_b_feeds_window + wdt_c_feeds + wdt_d_feeds;
+      USBSerial.printf(
+        "METRICS fps=%.1f eff_fps=%.1f a_ms=%.2f b_ms=%.2f c_ms=%.2f d_ms=%.2f e_ms=%.2f overlap=%.1f%% rb_miss=%lu rb_over=0 rb_dead=0 wdt_feed=%lu flip_viol=%lu\n",
+        SYSTEM_FPS,
+        LED_FPS,
+        a_ms, b_ms, c_ms, d_ms, e_ms,
+        overlap_pct,
+        (unsigned long)g_rb_deadline_miss,
+        (unsigned long)wdt_total,
+        (unsigned long)g_flip_violations);
+      if (g_flip_violations > 0) {
+        USBSerial.printf("FLIP_VIOL=%lu\n", (unsigned long)g_flip_violations);
+        g_flip_violations = 0;
+      }
     }
+
+    // Reset windows
     a_time_acc_us = b_time_acc_us = 0;
+    c_time_acc_us = d_time_acc_us = 0;
     metrics_frames = 0;
+    cd_frames = 0;
+    wdt_b_feeds = 0;
+    wdt_c_feeds = 0;
+    wdt_d_feeds = 0;
     metrics_win_start_ms = t_now;
   }
 
@@ -526,13 +704,28 @@ void loop() {
 }
 
 // Run the lights in their own thread! -------------------------------------------------------------
+#if 0  // LED thread is inactive in single-core build; metrics now emitted from main loop
 void led_thread(void* arg) {
+  /*
+   * METRICS EMISSION CONTEXT (Phase 3):
+   * - The system loop on Core 0 computes Phase A/B averages and publishes them to globals:
+   *     g_avg_a_us, g_avg_b_us, g_wdt_b_feeds_window.
+   * - This LED thread computes Phase C/D averages over a 4s window.
+   * - Together we emit a consolidated, machine‑parsable METRICS line here:
+   *   METRICS fps=<SYSTEM_FPS> eff_fps=<LED_FPS> a_ms=<Aavg_ms> b_ms=<Bavg_ms>
+   *           c_ms=<Cavg_ms> d_ms=<Davg_ms> e_ms=<0>
+   *           overlap=<D/(C+D) percent> rb_miss=<g_rb_deadline_miss>
+   *           rb_over=0 rb_dead=0 wdt_feed=<B+C+D> flip_viol=<g_flip_violations>
+  * - This matches docs/99.reference/metrics-and-logging.md while preserving double‑buffering and async output.
+   */
   USBSerial.println("DEBUG: LED thread started!");
   USBSerial.flush();
   static uint32_t c_time_acc_us = 0;
   static uint32_t d_time_acc_us = 0;
   static uint32_t l_frames = 0;
   static uint32_t l_win_start_ms = 0;
+  static uint32_t wdt_c_feeds_led = 0;
+  static uint32_t wdt_d_feeds_led = 0;
 
   while (!g_palette_ready) {
     vTaskDelay(1);
@@ -540,6 +733,13 @@ void led_thread(void* arg) {
   
   while (true) {
     if (led_thread_halt == false) {
+      // Phase 3 parity guard: ensure both strips are active at all times
+      if (!ENABLE_SECONDARY_LEDS) {
+        ENABLE_SECONDARY_LEDS = true;
+        if (USBSerial) {
+          USBSerial.println("PHASE3: Enforcing dual-strip parity; re-enabled secondary channel");
+        }
+      }
       uint32_t t_c_start = micros();
       begin_frame();
 
@@ -553,22 +753,23 @@ void led_thread(void* arg) {
       get_smooth_spectrogram();
       make_smooth_chromagram();
 
-      // Render the primary LED strip with the primary mode
-      if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_GDFT) {
-        light_mode_gdft();
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_GDFT_CHROMAGRAM) {
+  // Render the primary LED strip using Router-selected mode
+  frame_config.coordinator_is_secondary = false;
+  if (frame_config.coordinator_primary_mode == LIGHT_MODE_GDFT) {
+    light_mode_gdft();
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_GDFT_CHROMAGRAM) {
         light_mode_chromagram_gradient();
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_GDFT_CHROMAGRAM_DOTS) {
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_GDFT_CHROMAGRAM_DOTS) {
         light_mode_chromagram_dots();
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_BLOOM) {
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_BLOOM) {
         light_mode_bloom(leds_16_prev);
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_VU_DOT) {
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_VU_DOT) {
         light_mode_vu_dot();
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_KALEIDOSCOPE) {
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_KALEIDOSCOPE) {
         light_mode_kaleidoscope();
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_QUANTUM_COLLAPSE) {
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_QUANTUM_COLLAPSE) {
         light_mode_quantum_collapse();
-      } else if (frame_config.LIGHTSHOW_MODE == LIGHT_MODE_WAVEFORM) {
+      } else if (frame_config.coordinator_primary_mode == LIGHT_MODE_WAVEFORM) {
         // Seed primary LED buffer for trails
         memcpy(leds_16, leds_16_prev, sizeof(CRGB16) * NATIVE_RESOLUTION);
         // Call waveform with primary state buffers/variables
@@ -621,149 +822,18 @@ void led_thread(void* arg) {
         }
       }
 
-      if (CONFIG.PRISM_COUNT > 0) {
-        apply_prism_effect(CONFIG.PRISM_COUNT, 0.25);
-      }
-
-      if (CONFIG.BULB_OPACITY > 0.00) {
-        render_bulb_cover();
-      }
-      
-      // Only process secondary LEDs if enabled
-      if (ENABLE_SECONDARY_LEDS) {
-        // Store original LED buffer and settings before modifying anything
-        CRGB16 primary_buffer[NATIVE_RESOLUTION];
-        memcpy(primary_buffer, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
-        
-        // Store original settings
-        float saved_photons = CONFIG.PHOTONS;
-        float saved_chroma = CONFIG.CHROMA;
-        float saved_mood = CONFIG.MOOD;
-        bool saved_mirror = CONFIG.MIRROR_ENABLED;
-        float saved_saturation = CONFIG.SATURATION;
-        bool saved_auto_color_shift = CONFIG.AUTO_COLOR_SHIFT;
-        bool saved_secondary_reverse = SECONDARY_REVERSE_ORDER;
-        // Save additional potentially modified state
-        SQ15x16 saved_hue_position = hue_position;
-        SQ15x16 saved_chroma_val = chroma_val;
-        bool saved_chromatic_mode = chromatic_mode;
-        SQ15x16 saved_hue_shifting_mix = hue_shifting_mix;
-        uint8_t saved_square_iter = CONFIG.SQUARE_ITER;
-        // Add saving for potentially affected variables by specific modes
-        SQ15x16 saved_base_coat_width = base_coat_width;
-        SQ15x16 saved_base_coat_width_target = base_coat_width_target;
-        // CONFIG.MOOD is already saved in saved_mood (float)
-        // Add others as identified if necessary based on modes used for secondary strip
-
-        // Apply secondary settings
-        CONFIG.PHOTONS = SECONDARY_PHOTONS;
-        CONFIG.CHROMA = SECONDARY_CHROMA;
-        CONFIG.MOOD = SECONDARY_MOOD;
-        CONFIG.MIRROR_ENABLED = SECONDARY_MIRROR_ENABLED;
-        CONFIG.SATURATION = saved_saturation;
-        CONFIG.AUTO_COLOR_SHIFT = SECONDARY_AUTO_COLOR_SHIFT;
-        
-        // SECONDARY COLOR SHIFT [2025-09-20] - Simplified
-        // Let palettes_bridge.h handle protection internally
-        if (CONFIG.AUTO_COLOR_SHIFT == true && CONFIG.PALETTE_INDEX == 0) {
-          // Secondary hue shifting only in HSV mode
-          // Apply coordinator hue detune as an offset before processing
-          SQ15x16 det = frame_config.coordinator_hue_detune;
-          hue_position += det;
-          // wrap to [0,1)
-          while (hue_position < SQ15x16(0.0)) hue_position += SQ15x16(1.0);
-          while (hue_position >= SQ15x16(1.0)) hue_position -= SQ15x16(1.0);
-          process_color_shift();
-
-          #if DEBUG_COLOR_SHIFT_VALUES
-          // Track secondary channel shift
-          debug_color_shift_values(0.0f, 0.001f, 1.0f);
-          #endif
-        }
-        
-        // Clear and render new pattern for secondary LEDs
-        // Seed secondary pattern buffer for trails from last frame
-        memcpy(leds_16, leds_16_prev_secondary, sizeof(CRGB16) * NATIVE_RESOLUTION);
-        
-        // Use the SECONDARY_LIGHTSHOW_MODE directly without modifying CONFIG.LIGHTSHOW_MODE
-        // Apply anti-phase at output stage by toggling reverse flag for this frame
-        SECONDARY_REVERSE_ORDER = frame_config.coordinator_anti_phase;
-        if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_GDFT) {
-          light_mode_gdft();
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_GDFT_CHROMAGRAM) {
-          light_mode_chromagram_gradient();
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_GDFT_CHROMAGRAM_DOTS) {
-          light_mode_chromagram_dots();
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_BLOOM) {
-          light_mode_bloom(leds_16_prev_secondary);
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_VU_DOT) {
-          light_mode_vu_dot();
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_KALEIDOSCOPE) {
-          light_mode_kaleidoscope();
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_QUANTUM_COLLAPSE) {
-          light_mode_quantum_collapse();
-        } else if (SECONDARY_LIGHTSHOW_MODE == LIGHT_MODE_WAVEFORM) {
-          // Call waveform with secondary state buffers/variables
-          light_mode_waveform(leds_16_prev_secondary, waveform_last_color_secondary);
-          // Secondary buffer is saved below, but update its 'previous' state now
-          memcpy(leds_16_prev_secondary, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
-        }
-        
-        if (SECONDARY_PRISM_COUNT > 0) {
-          apply_prism_effect(SECONDARY_PRISM_COUNT, 0.25);
-        }
-        
-        // Save secondary pattern
-        memcpy(leds_16_secondary, leds_16, sizeof(CRGB16) * NATIVE_RESOLUTION);
-        clip_led_values(leds_16_secondary); // Clip the secondary buffer values
-        
-        // Restore primary buffer and settings
-        memcpy(leds_16, primary_buffer, sizeof(CRGB16) * NATIVE_RESOLUTION);
-        CONFIG.PHOTONS = saved_photons;
-        CONFIG.CHROMA = saved_chroma;
-        CONFIG.MOOD = saved_mood;
-        CONFIG.MIRROR_ENABLED = saved_mirror;
-        CONFIG.SATURATION = saved_saturation;
-        CONFIG.AUTO_COLOR_SHIFT = saved_auto_color_shift;
-        SECONDARY_REVERSE_ORDER = saved_secondary_reverse;
-        // Restore additional state
-        hue_position = saved_hue_position;
-        chroma_val = saved_chroma_val;
-        chromatic_mode = saved_chromatic_mode;
-        hue_shifting_mix = saved_hue_shifting_mix;
-        CONFIG.SQUARE_ITER = saved_square_iter;
-        // Restore the additional variables
-        base_coat_width = saved_base_coat_width;
-        base_coat_width_target = saved_base_coat_width_target;
-        // CONFIG.MOOD is restored via saved_mood
-
-        // Debug output disabled to prevent memory overflow
-        /*
-        if (ENABLE_SECONDARY_LEDS && (millis() % 1000 == 0)) { // Print roughly once per second
-            USBSerial.print("DEBUG: Secondary Raw [0-4]: ");
-            for(int k=0; k<5; k++) {
-                USBSerial.printf(" R:%.2f G:%.2f B:%.2f |",
-                    float(leds_16_secondary[k].r),
-                    float(leds_16_secondary[k].g),
-                    float(leds_16_secondary[k].b));
-            }
-            USBSerial.println();
-            USBSerial.printf("Audio peak: %.3f, Chromagram[0]: %.3f\n", 
-                waveform_peak_scaled, float(chromagram_smooth[0]));
-        }
-        */
-      }
-      
       publish_frame();
       uint32_t t_after_c = micros();
       // WDT feed after Phase C (render)
       esp_task_wdt_reset();
+      wdt_c_feeds_led++;
 
       uint32_t t_before_show = micros();
       show_leds();
       uint32_t t_after_show = micros();
       // WDT feed after Phase D (output)
       esp_task_wdt_reset();
+      wdt_d_feeds_led++;
       // Accumulate C/D timings and print once/sec
       l_frames++;
       c_time_acc_us += (t_after_c - t_c_start);
@@ -773,12 +843,81 @@ void led_thread(void* arg) {
       if ((now_ms - l_win_start_ms) >= 4000) { // throttle to ~0.25 Hz
         uint32_t c_avg = (l_frames > 0) ? (c_time_acc_us / l_frames) : 0;
         uint32_t d_avg = (l_frames > 0) ? (d_time_acc_us / l_frames) : 0;
-        USBSerial.printf("METRICS C(us)=%lu D(us)=%lu\n",
-                         (unsigned long)c_avg,
-                         (unsigned long)d_avg);
+        float overlap_pct = (c_avg + d_avg) ? (100.0f * float(d_avg) / float(c_avg + d_avg)) : 0.0f;
+        g_last_c_avg_us = c_avg;
+        g_last_d_avg_us = d_avg;
+        // Emit consolidated summary in the documented format
+        float a_ms = g_avg_a_us / 1000.0f;
+        float b_ms = g_avg_b_us / 1000.0f;
+        float c_ms = c_avg / 1000.0f;
+        float d_ms = d_avg / 1000.0f;
+        // Phase E not tracked separately in this build
+        float e_ms = 0.0f;
+        uint32_t wdt_total = g_wdt_b_feeds_window + wdt_c_feeds_led + wdt_d_feeds_led;
+        USBSerial.printf(
+          "METRICS fps=%.1f eff_fps=%.1f a_ms=%.2f b_ms=%.2f c_ms=%.2f d_ms=%.2f e_ms=%.2f overlap=%.1f%% rb_miss=%lu rb_over=0 rb_dead=0 wdt_feed=%lu flip_viol=%lu\n",
+          SYSTEM_FPS,
+          LED_FPS,
+          a_ms, b_ms, c_ms, d_ms, e_ms,
+          overlap_pct,
+          (unsigned long)g_rb_deadline_miss,
+          (unsigned long)wdt_total,
+          (unsigned long)g_flip_violations);
+        if (g_flip_violations > 0) {
+          USBSerial.printf("FLIP_VIOL=%lu\n", (unsigned long)g_flip_violations);
+          g_flip_violations = 0;
+        }
+        // QoS degrade controller: adjust gently based on Phase C time
+        // Target 120 FPS budget (~8ms total). Keep C under ~6ms with headroom.
+        const uint32_t C_HIGH_US   = g_qos_c_high_us;     // high watermark
+        const uint32_t C_LOW_US    = g_qos_c_low_us;      // low watermark (relax trims)
+#if ENABLE_QOS_HYSTERESIS
+        const uint32_t c_high_trigger = C_HIGH_US;
+        const uint32_t c_low_trigger  = (C_LOW_US > QOS_HYSTERESIS_MARGIN_US)
+                                          ? (C_LOW_US - QOS_HYSTERESIS_MARGIN_US)
+                                          : 0;
+        if (c_avg > c_high_trigger && g_qos_level < 3) {
+          g_qos_level++;
+        } else if (c_avg < c_low_trigger && g_qos_level > 0) {
+          g_qos_level--;
+        }
+#else
+        if (c_avg > C_HIGH_US && g_qos_level < 3) {
+          g_qos_level++;
+        } else if (c_avg < C_LOW_US && g_qos_level > 0) {
+          g_qos_level--;
+        }
+#endif
+#if ENABLE_QOS_LED_FPS_GUARD
+        if (LED_FPS < 100.0f && g_qos_level < 3) {
+          g_qos_level++;
+          USBSerial.printf("QOS guard: LED_FPS=%.1f -> level=%u\n", LED_FPS, (unsigned)g_qos_level);
+        }
+#endif
+        // Map level to prism trimming (uniform across both channels)
+        // Level 0: 0 trim, 1:1, 2:2, 3:3
+        g_qos_prism_trim = g_qos_level;
+        // Optional uniform brightness scaling (OFF by default)
+        if (g_qos_brightness_degrade_enabled) {
+          float target_scale = 1.0f - 0.05f * float(g_qos_level); // -5% per level
+          // Smooth toward target to avoid visual thrash
+          float current = float(g_qos_brightness_scale);
+          current = current * 0.8f + target_scale * 0.2f;
+          if (current < 0.6f) current = 0.6f;
+          g_qos_brightness_scale = SQ15x16(current);
+        } else {
+          g_qos_brightness_scale = SQ15x16(1.0);
+        }
+        USBSerial.printf("QOS level=%u prism_trim=%u bright=%.2f (Cavg=%luus)\n",
+                         (unsigned)g_qos_level,
+                         (unsigned)g_qos_prism_trim,
+                         float(g_qos_brightness_scale),
+                         (unsigned long)c_avg);
+        // Reset windows
         c_time_acc_us = d_time_acc_us = 0;
         l_frames = 0;
         l_win_start_ms = now_ms;
+        wdt_c_feeds_led = wdt_d_feeds_led = 0;
       }
       
       LED_FPS = 0.95 * LED_FPS + 0.05 * (1000000.0 / (esp_timer_get_time() - last_frame_us));
@@ -788,6 +927,7 @@ void led_thread(void* arg) {
     taskYIELD();
   }
 }
+#endif
 
 // // Add this new function to update encoder LEDs - REMOVED
 // void update_encoder_leds() {

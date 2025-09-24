@@ -12,10 +12,17 @@
 #include <math.h> // For standard math functions if needed
 #include "palettes/safety_palettes.h" // PALETTE-SAFETY-001: Bounds checking utilities
 #include "palettes/palettes_bridge.h"
+
+#ifndef ENABLE_BASELINE_BRIGHTNESS_LOG
+#define ENABLE_BASELINE_BRIGHTNESS_LOG 0
+#endif
 #include "debug/debug_manager.h" // For organized debug output
 #include "debug/performance_monitor.h"
 // Debug taps for color pipeline analysis
 #include "led_color_debug.h"
+
+// Forward declaration for ESP32-S3 I2S driver busy flag (FastLED third-party driver)
+namespace fl { extern volatile bool isDisplaying; }
 
 namespace {
 constexpr bool kEnableAddressLog = false;
@@ -271,16 +278,23 @@ inline CRGB16 hsv(SQ15x16 h, SQ15x16 s, SQ15x16 v) {
   while (h > 1.0) { h -= 1.0; }
   while (h < 0.0) { h += 1.0; }
 
+#if ENABLE_NEW_COLOR_PIPELINE
+  // Gamma‑aware HSV → linear CRGB16 to match palette LUT behaviour
+  CRGB fast = CHSV(uint8_t(h * 255.0f), uint8_t(s * 255.0f), 255);
+  constexpr float gamma_in = 2.2f; // must match palette_luts.cpp
+  float lr = powf(fast.r / 255.0f, gamma_in);
+  float lg = powf(fast.g / 255.0f, gamma_in);
+  float lb = powf(fast.b / 255.0f, gamma_in);
+  CRGB16 out = { SQ15x16(lr), SQ15x16(lg), SQ15x16(lb) };
+  out.r *= v; out.g *= v; out.b *= v;
+  return out;
+#else
+  // Legacy: CHSV (gamma-encoded) promoted to linear-ish floats and scaled by V
   CRGB base_color = CHSV(uint8_t(h * 255.0), uint8_t(s * 255.0), 255);
-
   CRGB16 col = {{ base_color.r / 255.0 }, { base_color.g / 255.0 }, { base_color.b / 255.0 }};
-  //col = desaturate(col, SQ15x16(1.0) - s);
-
-  col.r *= v;
-  col.g *= v;
-  col.b *= v;
-
+  col.r *= v; col.g *= v; col.b *= v;
   return col;
+#endif
 }
 
 inline void clip_led_values(CRGB16* buffer) { // Modified to accept buffer pointer
@@ -305,6 +319,53 @@ inline void reverse_leds(CRGB arr[], uint16_t size) {
     start++;
     end--;
   }
+}
+
+inline void reverse_leds_16(CRGB16 arr[], uint16_t size) {
+  uint16_t start = 0;
+  uint16_t end = size - 1;
+  while (start < end) {
+    CRGB16 temp = arr[start];
+    arr[start] = arr[end];
+    arr[end] = temp;
+    start++;
+    end--;
+  }
+}
+
+// Apply anti-phase operator inside synthesis for secondary channel only.
+// This is a pure index transform at the buffer level before Stage 4/5.
+inline void apply_antiphase_if_secondary(CRGB16* buffer) {
+  #if ENABLE_DUAL_OPS_ANTIPHASE_IN_SYNTHESIS
+    if (frame_config.coordinator_anti_phase && frame_config.coordinator_is_secondary) {
+      reverse_leds_16(buffer, NATIVE_RESOLUTION);
+    }
+  #else
+    (void)buffer; // unused
+  #endif
+}
+
+// Apply a small temporal offset by blending in the previous secondary frame.
+// This approximates a 1–3 frame lag without extra buffers, matching Phase 3's
+// "temporal offset" operator. Safe and cheap (linear blend).
+inline void apply_temporal_offset_if_secondary(CRGB16* current, const CRGB16* prev) {
+  #if ENABLE_DUAL_OPS_TEMPORAL_BLEND
+    if (!frame_config.coordinator_is_secondary) return;
+    SQ15x16 off = frame_config.coordinator_phase_offset; // 0..~0.05 typical
+    if (off <= SQ15x16(0)) return;
+    // Map small phase offsets to a conservative blend factor (max ~0.25)
+    SQ15x16 alpha = off * SQ15x16(5.0); // 0..0.25 for off up to 0.05
+    if (alpha > SQ15x16(0.25)) alpha = SQ15x16(0.25);
+    if (alpha <= SQ15x16(0)) return;
+    SQ15x16 one_minus = SQ15x16(1.0) - alpha;
+    for (uint16_t i = 0; i < NATIVE_RESOLUTION; ++i) {
+      current[i].r = current[i].r * one_minus + prev[i].r * alpha;
+      current[i].g = current[i].g * one_minus + prev[i].g * alpha;
+      current[i].b = current[i].b * one_minus + prev[i].b * alpha;
+    }
+  #else
+    (void)current; (void)prev; // unused
+  #endif
 }
 
 inline void run_sweet_spot() {
@@ -430,6 +491,8 @@ inline void apply_brightness() {
   SQ15x16 balance = frame_config.coordinator_intensity_balance; // 0..1
   SQ15x16 primary_scale = SQ15x16(1.0) - (balance - SQ15x16(0.5)) * SQ15x16(0.3);
   brightness *= primary_scale;
+  // QoS (optional) uniform brightness scaler
+  brightness *= g_qos_brightness_scale;
 
   // Single global floor (replaces all scattered floors throughout the pipeline)
   // Keep small (3%) to preserve low-end detail; adjust only if hardware flicker requires it
@@ -1144,6 +1207,51 @@ inline void show_leds() {
     reverse_leds(leds_out, CONFIG.LED_COUNT);
   }
 
+#if ENABLE_CURRENT_LIMITER
+  // --- Phase 5: Minimal current limiter (uniform scale) ---
+  // Estimate current usage across primary (+ secondary if enabled) and reduce uniformly
+  // based on CONFIG.MAX_CURRENT_MA if runtime gate is enabled.
+  if (g_current_limiter_enabled) {
+    auto estimate_strip_ma = [](const CRGB* buf, uint16_t count) -> float {
+      if (!buf || count == 0) return 0.0f;
+      uint32_t sum = 0;
+      for (uint16_t i = 0; i < count; i++) {
+        sum += buf[i].r + buf[i].g + buf[i].b; // 0..765 per pixel
+      }
+      // Per-channel 0..255 scaled to CURRENT_LIMITER_MA_PER_CHANNEL
+      // Total mA = (sum/255) * (CURRENT_LIMITER_MA_PER_CHANNEL)
+      return (float(sum) / 255.0f) * CURRENT_LIMITER_MA_PER_CHANNEL;
+    };
+
+    float est_ma_primary = estimate_strip_ma(leds_out, CONFIG.LED_COUNT);
+    float est_ma_secondary = (ENABLE_SECONDARY_LEDS) ? estimate_strip_ma(leds_out_secondary, SECONDARY_LED_COUNT_CONST) : 0.0f;
+    float est_ma_total = est_ma_primary + est_ma_secondary;
+    // Simple EMA to stabilize the estimate
+    g_current_estimate_ma_ema = 0.9f * g_current_estimate_ma_ema + 0.1f * est_ma_total;
+
+    float budget = float(CONFIG.MAX_CURRENT_MA);
+    if (budget > 0.0f && est_ma_total > budget) {
+      float scale = budget / est_ma_total;
+      if (scale < 0.0f) scale = 0.0f;
+      if (scale > 1.0f) scale = 1.0f;
+      // Uniformly scale both strips to respect budget
+      for (uint16_t i = 0; i < CONFIG.LED_COUNT; i++) {
+        leds_out[i].r = uint8_t(float(leds_out[i].r) * scale);
+        leds_out[i].g = uint8_t(float(leds_out[i].g) * scale);
+        leds_out[i].b = uint8_t(float(leds_out[i].b) * scale);
+      }
+      if (ENABLE_SECONDARY_LEDS) {
+        for (uint16_t i = 0; i < SECONDARY_LED_COUNT_CONST; i++) {
+          leds_out_secondary[i].r = uint8_t(float(leds_out_secondary[i].r) * scale);
+          leds_out_secondary[i].g = uint8_t(float(leds_out_secondary[i].g) * scale);
+          leds_out_secondary[i].b = uint8_t(float(leds_out_secondary[i].b) * scale);
+        }
+      }
+      g_current_limit_engaged++;
+    }
+  }
+#endif
+
   if (debug_mode && (millis() % 10000 == 0)) {
     bool has_light = false;
     uint16_t first_nonzero = NATIVE_RESOLUTION;
@@ -1372,6 +1480,22 @@ inline void mirror_image_downwards(CRGB16* led_array) {
   }
 
   memcpy(led_array, leds_16_temp, sizeof(CRGB16) * NATIVE_RESOLUTION);
+}
+
+// Rotate a sub-region of a CRGB16 array by delta pixels (positive = up/right).
+inline void rotate_region_16(CRGB16* arr, uint16_t start, uint16_t len, int16_t delta) {
+  if (len == 0) return;
+  int16_t shift = delta % int16_t(len);
+  if (shift < 0) shift += len;
+  if (shift == 0) return;
+  // Copy to temp
+  for (uint16_t i = 0; i < len; ++i) {
+    leds_16_temp[i] = arr[start + i];
+  }
+  for (uint16_t i = 0; i < len; ++i) {
+    uint16_t src = (i + shift) % len;
+    arr[start + i] = leds_16_temp[src];
+  }
 }
 
 inline void intro_animation() {
@@ -2063,22 +2187,30 @@ inline void scale_to_secondary_strip() {
 }
 
 inline void apply_brightness_secondary() {
-  // Apply the same silence scaling used for the primary LEDs
-  float bright_val = SECONDARY_PHOTONS * SECONDARY_PHOTONS * silent_scale;
-  // Coordinator intensity balance: bias secondary opposite to primary
+  // Uniform brightness policy: linear PHOTONS with MASTER_BRIGHTNESS and silence scale
+  float bright_val = MASTER_BRIGHTNESS * SECONDARY_PHOTONS * float(silent_scale);
+  // Coordinator intensity balance: bias secondary opposite to primary (small modulation)
   float balance = float(frame_config.coordinator_intensity_balance);
   float secondary_scale = 1.0f + (balance - 0.5f) * 0.3f;
   bright_val *= secondary_scale;
-  
+  // QoS (optional) uniform brightness scaler
+  bright_val *= float(g_qos_brightness_scale);
+
+  // Apply a small floor (3%) to preserve low-end detail
+  const float BRIGHTNESS_FLOOR = 0.03f;
+  if (bright_val < BRIGHTNESS_FLOOR) bright_val = BRIGHTNESS_FLOOR;
+
   if (debug_mode && (millis() % 5000 == 0)) {
     USBSerial.print("DEBUG: Secondary brightness = ");
     USBSerial.print(SECONDARY_PHOTONS);
-    USBSerial.print("² × silent_scale(");
+    USBSerial.print(" × silent_scale(");
     USBSerial.print(silent_scale);
+    USBSerial.print(") × MASTER(");
+    USBSerial.print(MASTER_BRIGHTNESS);
     USBSerial.print(") = ");
     USBSerial.println(bright_val);
   }
-  
+
   for (uint16_t i = 0; i < SECONDARY_LED_COUNT_CONST; i++) {
     leds_scaled_secondary[i].r *= bright_val;
     leds_scaled_secondary[i].g *= bright_val;

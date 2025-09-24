@@ -285,13 +285,7 @@ void IRAM_ATTR process_GDFT() {
       goertzel_max_value = dynamic_agc_floor_scaled;
   }
 
-  // Enhanced periodic Debugging log for AGC floor mechanism
-   if (debug_mode && (millis() % 5000 == 0)) { // Log roughly every 5 seconds
-       USBSerial.print("DEBUG (AGC): TrackerRaw: "); USBSerial.print(float(min_silent_level_tracker));
-       USBSerial.print(" | FloorRawClamped: "); USBSerial.print(float(dynamic_agc_floor_raw));
-       USBSerial.print(" | FloorScaledClamped: "); USBSerial.print(float(dynamic_agc_floor_scaled));
-       USBSerial.print(" | GoertzelMax: "); USBSerial.println(float(goertzel_max_value));
-   }
+  // AGC debug log removed to reduce serial noise in production
   // --> END REPLACED/ENHANCED <--
 
   // Normalize output using goertzel_max_val

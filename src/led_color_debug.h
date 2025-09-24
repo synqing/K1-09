@@ -13,10 +13,10 @@
 #if LED_COLOR_DEBUG_ENABLED
 
 // Debug output control
-static bool led_debug_verbose = false;
-static bool led_debug_palette_tracking = true;
-static bool led_debug_corruption_detection = true;
-static uint32_t led_debug_sample_interval = 10; // Debug every N frames
+[[maybe_unused]] static bool led_debug_verbose = false;
+[[maybe_unused]] static bool led_debug_palette_tracking = true;
+[[maybe_unused]] static bool led_debug_corruption_detection = true;
+[[maybe_unused]] static uint32_t led_debug_sample_interval = 10; // Debug every N frames
 
 // Color tracking statistics
 struct LEDColorStats {
@@ -34,7 +34,7 @@ struct LEDColorStats {
 #ifndef SB_LED_COLOR_DEBUG_IMPL
 extern LEDColorStats led_color_stats;
 #else
-LEDColorStats led_color_stats = {0};
+LEDColorStats led_color_stats{};
 #endif
 
 // Enhanced color analysis with audio correlation
@@ -51,12 +51,12 @@ struct ColorDebugSample {
 };
 
 // ANSI colors for debug output
-static const char* DEBUG_CYAN = "\033[36m";
+[[maybe_unused]] static const char* DEBUG_CYAN = "\033[36m";
 static const char* DEBUG_GREEN = "\033[32m";
-static const char* DEBUG_YELLOW = "\033[33m";
-static const char* DEBUG_RED = "\033[31m";
-static const char* DEBUG_BLUE = "\033[34m";
-static const char* DEBUG_RESET = "\033[0m";
+[[maybe_unused]] static const char* DEBUG_YELLOW = "\033[33m";
+[[maybe_unused]] static const char* DEBUG_RED = "\033[31m";
+[[maybe_unused]] static const char* DEBUG_BLUE = "\033[34m";
+[[maybe_unused]] static const char* DEBUG_RESET = "\033[0m";
 
 // Initialize LED color debugging
 #ifndef SB_LED_COLOR_DEBUG_IMPL
@@ -65,7 +65,9 @@ inline void init_led_color_debug();
 inline void init_led_color_debug() {
     memset(&led_color_stats, 0, sizeof(led_color_stats));
     USBSerial.printf("%s[LED_COLOR_DEBUG] Initialized - Interval: every %lu frames%s\n",
-                     DEBUG_GREEN, led_debug_sample_interval, DEBUG_RESET);
+                     DEBUG_GREEN,
+                     static_cast<unsigned long>(led_debug_sample_interval),
+                     DEBUG_RESET);
 }
 #endif
 
@@ -113,21 +115,27 @@ inline bool detect_color_corruption(const CRGB16& color, uint32_t frame_num) {
     // Range validation
     if (float(color.r) > 1.0f || float(color.g) > 1.0f || float(color.b) > 1.0f) {
         USBSerial.printf("%s[CORRUPTION] Frame:%lu RGB overflow: (%.3f,%.3f,%.3f)%s\n",
-                         DEBUG_RED, frame_num, float(color.r), float(color.g), float(color.b), DEBUG_RESET);
+                         DEBUG_RED,
+                         static_cast<unsigned long>(frame_num),
+                         float(color.r), float(color.g), float(color.b), DEBUG_RESET);
         corruption_detected = true;
     }
 
     // Negative values (should be impossible with SQ15x16 but check anyway)
     if (float(color.r) < 0.0f || float(color.g) < 0.0f || float(color.b) < 0.0f) {
         USBSerial.printf("%s[CORRUPTION] Frame:%lu RGB underflow: (%.3f,%.3f,%.3f)%s\n",
-                         DEBUG_RED, frame_num, float(color.r), float(color.g), float(color.b), DEBUG_RESET);
+                         DEBUG_RED,
+                         static_cast<unsigned long>(frame_num),
+                         float(color.r), float(color.g), float(color.b), DEBUG_RESET);
         corruption_detected = true;
     }
 
     // NaN detection (floating point corruption)
     if (isnan(float(color.r)) || isnan(float(color.g)) || isnan(float(color.b))) {
         USBSerial.printf("%s[CORRUPTION] Frame:%lu RGB NaN detected: (%.3f,%.3f,%.3f)%s\n",
-                         DEBUG_RED, frame_num, float(color.r), float(color.g), float(color.b), DEBUG_RESET);
+                         DEBUG_RED,
+                         static_cast<unsigned long>(frame_num),
+                         float(color.r), float(color.g), float(color.b), DEBUG_RESET);
         corruption_detected = true;
     }
 
@@ -196,8 +204,10 @@ inline void analyze_led_color_detailed(const CRGB16& color, uint32_t frame_num, 
 
     if (led_debug_palette_tracking && current_palette_index != last_palette_index) {
         const char* palette_name = palette_name_for_index(current_palette_index);
-        USBSerial.printf("%s[PALETTE] Frame:%lu Transition: %d → %d (%s)%s\n",
-                         DEBUG_BLUE, frame_num, last_palette_index, current_palette_index, palette_name, DEBUG_RESET);
+        USBSerial.printf("%s[PALETTE] Frame:%lu Transition: %d -> %d (%s)%s\n",
+                         DEBUG_BLUE,
+                         static_cast<unsigned long>(frame_num),
+                         last_palette_index, current_palette_index, palette_name, DEBUG_RESET);
         led_color_stats.palette_transitions++;
         last_palette_index = current_palette_index;
     }
@@ -207,7 +217,9 @@ inline void analyze_led_color_detailed(const CRGB16& color, uint32_t frame_num, 
         const char* mode_str = palette_mode ? palette_name_for_index(current_palette_index) : "HSV";
 
         USBSerial.printf("%s[COLOR] Frame:%lu RGB:(%.3f,%.3f,%.3f) Bright:%.3f Sat:%.3f Hue:%.1f° Mode:%s",
-                         DEBUG_CYAN, frame_num, float(color.r), float(color.g), float(color.b),
+                         DEBUG_CYAN,
+                         static_cast<unsigned long>(frame_num),
+                         float(color.r), float(color.g), float(color.b),
                          brightness, saturation, hue, mode_str);
 
         if (audio_energy > 0.0f) {
@@ -245,21 +257,21 @@ inline void print_led_color_stats();
 #else
 inline void print_led_color_stats() {
     USBSerial.printf("\n%s=== LED COLOR DEBUG STATISTICS ===%s\n", DEBUG_YELLOW, DEBUG_RESET);
-    USBSerial.printf("Total Samples: %lu\n", led_color_stats.total_samples);
-    USBSerial.printf("Last Frame: %lu\n", led_color_stats.last_frame_number);
+    USBSerial.printf("Total Samples: %lu\n", static_cast<unsigned long>(led_color_stats.total_samples));
+    USBSerial.printf("Last Frame: %lu\n", static_cast<unsigned long>(led_color_stats.last_frame_number));
     USBSerial.printf("Corruption Events: %lu (%.2f%%)\n",
-                     led_color_stats.corruption_events,
+                     static_cast<unsigned long>(led_color_stats.corruption_events),
                      led_color_stats.total_samples > 0 ?
                      (float(led_color_stats.corruption_events) / led_color_stats.total_samples) * 100.0f : 0.0f);
-    USBSerial.printf("Palette Transitions: %lu\n", led_color_stats.palette_transitions);
+    USBSerial.printf("Palette Transitions: %lu\n", static_cast<unsigned long>(led_color_stats.palette_transitions));
     USBSerial.printf("Brightness - Avg:%.3f Min:%.3f Max:%.3f\n",
                      led_color_stats.avg_brightness, led_color_stats.min_brightness, led_color_stats.max_brightness);
     USBSerial.printf("Zero Brightness Frames: %lu (%.2f%%)\n",
-                     led_color_stats.zero_brightness_frames,
+                     static_cast<unsigned long>(led_color_stats.zero_brightness_frames),
                      led_color_stats.total_samples > 0 ?
                      (float(led_color_stats.zero_brightness_frames) / led_color_stats.total_samples) * 100.0f : 0.0f);
     USBSerial.printf("Oversaturated Frames: %lu (%.2f%%)\n",
-                     led_color_stats.oversaturated_frames,
+                     static_cast<unsigned long>(led_color_stats.oversaturated_frames),
                      led_color_stats.total_samples > 0 ?
                      (float(led_color_stats.oversaturated_frames) / led_color_stats.total_samples) * 100.0f : 0.0f);
     USBSerial.printf("Current Palette: %s (%d)\n", get_current_palette_name(), CONFIG.PALETTE_INDEX);
@@ -287,7 +299,9 @@ inline void set_led_debug_interval(uint32_t interval);
 inline void set_led_debug_interval(uint32_t interval) {
     led_debug_sample_interval = interval;
     USBSerial.printf("%s[LED_COLOR_DEBUG] Sample interval: every %lu frames%s\n",
-                     DEBUG_GREEN, interval, DEBUG_RESET);
+                     DEBUG_GREEN,
+                     static_cast<unsigned long>(interval),
+                     DEBUG_RESET);
 }
 #endif
 

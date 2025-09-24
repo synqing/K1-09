@@ -364,10 +364,28 @@ SQ15x16 note_colors[12] = {
 CRGB16 incandescent_lookup = {{ 1.0000 }, { 0.4453 }, { 0.1562 }};
 
 // LED_LERP ODR FIX [2025-09-19 17:15] - Moved from led_utilities.h
-// Static storage for lerp params (up to 160 LEDs)
-static LerpParams g_led_lerp_params[160];
-LerpParams* led_lerp_params = g_led_lerp_params;
-bool lerp_params_initialized = false;
+// Lerp params storage defined in led_util_state.cpp (needs full type)
+extern LerpParams* led_lerp_params;
+extern bool lerp_params_initialized;
+
+// Audio ring counters
+volatile uint32_t g_rb_partial_bytes = 0;
+volatile uint32_t g_rb_deadline_miss = 0;
+volatile uint32_t g_rb_reads = 0;
+
+// Phase timing snapshot for consolidated METRICS line
+volatile uint32_t g_avg_a_us = 0;
+volatile uint32_t g_avg_b_us = 0;
+volatile uint32_t g_wdt_b_feeds_window = 0;
+volatile uint32_t g_last_c_avg_us = 0;
+volatile uint32_t g_last_d_avg_us = 0;
+volatile uint8_t  g_last_effective_prism_primary = 0;
+volatile uint8_t  g_last_effective_prism_secondary = 0;
+
+// Current limiter (Phase 5 scaffold)
+bool     g_current_limiter_enabled = false; // default OFF
+volatile uint32_t g_current_limit_engaged = 0;
+float    g_current_estimate_ma_ema = 0.0f;
 
 // Front/back indices for double-buffered output (shared across channels)
 int g_led_front_idx = 0;
@@ -377,6 +395,44 @@ int g_led_back_idx = 1;
 CLEDController* g_primary_ctrl = nullptr;
 CLEDController* g_secondary_ctrl = nullptr;
 
+// Flip safety/metrics
+volatile uint32_t g_flip_violations = 0;
+
+//
+// Compile-time buffer geometry consistency checks (no runtime cost)
+//
+static_assert((sizeof(g_leds_out_primary_fb[0]) / sizeof(CRGB)) == NATIVE_RESOLUTION,
+              "Phase3 guard: Primary front buffer width must match NATIVE_RESOLUTION");
+static_assert((sizeof(g_leds_out_secondary_fb[0]) / sizeof(CRGB)) == NATIVE_RESOLUTION,
+              "Phase3 guard: Secondary front buffer width must match NATIVE_RESOLUTION");
+
+// QoS degrade state (uniform across both channels)
+SQ15x16 g_qos_brightness_scale = SQ15x16(1.0);
+volatile uint8_t g_qos_prism_trim = 0;
+volatile uint8_t g_qos_level = 0;
+bool g_qos_brightness_degrade_enabled = false; // OFF by default per operating plan
+
 // PALETTE INTEGRATION [2025-09-20] - Phase 2 minimal state management
 // REMOVED: g_current_palette_index - CONFIG.PALETTE_INDEX is now single source of truth
 // uint8_t g_current_palette_index = 0;
+
+// Router FSM tunables (defaults)
+uint8_t  g_router_dwell_min_beats = 4;
+uint8_t  g_router_dwell_max_beats = 8;
+uint8_t  g_router_cooldown_min_beats = 2;
+uint8_t  g_router_cooldown_max_beats = 4;
+uint8_t  g_router_onset_prob_percent = 30; // %
+SQ15x16  g_router_novelty_thresh = SQ15x16(0.20);
+SQ15x16  g_router_vu_delta_thresh = SQ15x16(0.08);
+uint8_t  g_router_var_mix_detune = 40;
+uint8_t  g_router_var_mix_anti   = 30;
+uint8_t  g_router_var_mix_circ   = 30;
+SQ15x16  g_router_detune_max = SQ15x16(0.08);
+uint8_t  g_router_circ_frames_max = 3;
+SQ15x16  g_router_balance_min = SQ15x16(0.30);
+SQ15x16  g_router_balance_max = SQ15x16(0.70);
+
+// QoS thresholds (defaults)
+uint32_t g_qos_c_target_us = 6000;
+uint32_t g_qos_c_high_us   = 7000;
+uint32_t g_qos_c_low_us    = 5000;
