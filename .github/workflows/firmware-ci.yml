@@ -30,6 +30,13 @@ jobs:
       - name: Make runner executable
         run: chmod +x agent_runner.sh
 
+      - name: Install clang tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-15 clang-tidy-15
+          sudo ln -sf /usr/bin/clang-format-15 /usr/bin/clang-format
+          sudo ln -sf /usr/bin/clang-tidy-15 /usr/bin/clang-tidy
+
       - name: Build (release)
         run: ./agent_runner.sh pio run -e esp32-s3-devkitc-1
 
@@ -125,6 +132,54 @@ jobs:
             echo "I2S/audio files modified without 'allow-audio-touch' label" >&2; exit 1
           fi
 
+          phase_allow() {
+            local file="$1"
+            case "$file" in
+              docs/*|.github/*|scripts/*|tools/*|analysis/*|README.md|.scannerignore|agent_runner.sh|.clang-format|.clang-tidy|docs/palette_snapshots/*|docs/retrofit_artifacts/*|docs/COLOR_REFIT_GIT_WORKFLOW.md)
+                return 0;;
+            esac
+            case "$PHASE" in
+              phase-0)
+                return 1;;
+              phase-1)
+                case "$file" in
+                  src/user_config.h|src/led_utilities.h|src/palettes/palettes_bridge.h)
+                    return 0;;
+                esac
+                return 1;;
+              phase-2)
+                case "$file" in
+                  src/user_config.h|src/led_utilities.h|src/palettes/palettes_bridge.h|src/palettes/palette_facade.h|src/lightshow_modes.h|src/lightshow_modes.cpp)
+                    return 0;;
+                esac
+                return 1;;
+              phase-3)
+                case "$file" in
+                  src/led_utilities.h|src/palettes/palettes_bridge.h|src/led_color_debug.h|src/led_color_debug.cpp|src/core/globals.cpp)
+                    return 0;;
+                esac
+                return 1;;
+              phase-4)
+                case "$file" in
+                  src/lightshow_modes.h|src/lightshow_modes.cpp|src/palettes/palette_facade.h|src/palettes/palettes_bridge.h|src/led_utilities.h)
+                    return 0;;
+                esac
+                return 1;;
+            esac
+          }
+
+          disallowed=""
+          while read -r fname; do
+            phase_allow "$fname" || disallowed="$disallowed\n$fname"
+          done < <(jq -r '.[].filename' files.json)
+
+          if [ -n "$disallowed" ] && ! echo " $LABELS " | grep -q " phase-override "; then
+            echo "Files outside phase scope:" >&2
+            echo "$disallowed" >&2
+            echo "Add label 'phase-override' or adjust file list." >&2
+            exit 1
+          fi
+
           # Dynamic allocation ban in diff (new code only)
           git fetch origin "$BASE:refs/remotes/origin/$BASE"
           git diff -U0 "origin/$BASE...HEAD" | rg -n "^\+.*\bnew\b|^\+.*delete\s*\[|^\+.*\bdelete\b" && {
@@ -132,6 +187,20 @@ jobs:
 
       - name: Generate compile_commands.json
         run: ./agent_runner.sh pio run -t compiledb
+
+      - name: clang-format check
+        run: |
+          find src include -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
+
+      - name: clang-tidy check
+        run: |
+          find src -type f -name '*.cpp' > cpp_files.txt
+          if [ -s cpp_files.txt ]; then
+            clang-tidy --warnings-as-errors='*' --quiet -p . $(cat cpp_files.txt)
+          else
+            echo "No C++ translation units to tidy"
+          fi
 
       - name: Upload analysis artifacts
         uses: actions/upload-artifact@v4
