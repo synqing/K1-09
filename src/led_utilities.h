@@ -276,11 +276,20 @@ inline CRGB16 hsv(SQ15x16 h, SQ15x16 s, SQ15x16 v) {
 #if ENABLE_NEW_COLOR_PIPELINE
   // Gamma-aware HSV: convert FastLED CHSV output (sRGB) to linear space to match palette LUTs
   CRGB fast = CHSV(uint8_t(h * 255.0f), uint8_t(s * 255.0f), 255);
-  constexpr float gamma_in = 2.2f; // match palettes conversion in palette_luts.cpp
+  // Use a small static LUT to avoid powf cost in hot path
+  static bool gamma_lut_init = false;
+  static float gamma_lut[256];
+  if (!gamma_lut_init) {
+    constexpr float gamma_in = 2.2f; // match palettes conversion in palette_luts.cpp
+    for (int i = 0; i < 256; ++i) {
+      gamma_lut[i] = powf(float(i) / 255.0f, gamma_in);
+    }
+    gamma_lut_init = true;
+  }
 
-  float lr = powf(fast.r / 255.0f, gamma_in);
-  float lg = powf(fast.g / 255.0f, gamma_in);
-  float lb = powf(fast.b / 255.0f, gamma_in);
+  float lr = gamma_lut[fast.r];
+  float lg = gamma_lut[fast.g];
+  float lb = gamma_lut[fast.b];
 
   CRGB16 out;
   out.r = SQ15x16(lr);
