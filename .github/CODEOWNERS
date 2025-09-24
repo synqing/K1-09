@@ -1,0 +1,12 @@
+# High‑risk paths require CODEOWNERS review
+/src/led_utilities.h   @synqing
+/src/palettes/palettes_bridge.h  @synqing
+/src/lightshow_modes.h  @synqing
+/src/lightshow_modes.cpp  @synqing
+
+# Broad code surface
+/src/**   @synqing
+/include/**  @synqing
+/tools/**  @synqing
+/.github/**  @synqing
+/docs/**  @synqing
