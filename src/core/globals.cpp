@@ -3,6 +3,7 @@
 
 #include "../globals.h"
 #include <Arduino.h>
+#include "../led_utilities.h"  // ensure LerpParams definition visible
 
 // Forward declaration for LerpParams (defined in led_utilities.h)
 struct LerpParams;
@@ -368,6 +369,14 @@ CRGB16 incandescent_lookup = {{ 1.0000 }, { 0.4453 }, { 0.1562 }};
 static LerpParams g_led_lerp_params[160];
 LerpParams* led_lerp_params = g_led_lerp_params;
 bool lerp_params_initialized = false;
+
+// Audio ring counters / instrumentation (referenced by metrics)
+volatile uint32_t g_rb_partial_bytes = 0;
+volatile uint32_t g_rb_deadline_miss = 0;
+volatile uint32_t g_rb_reads = 0;
+
+// Flip safety/metrics
+volatile uint32_t g_flip_violations = 0;
 
 // Front/back indices for double-buffered output (shared across channels)
 int g_led_front_idx = 0;
