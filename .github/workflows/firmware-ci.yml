@@ -76,6 +76,60 @@ jobs:
             exit 1
           fi
 
+      - name: PR guardrails (labels, freeze, dynamic alloc)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PRNUM: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # Fetch PR JSON
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/pulls/$PRNUM" > pr.json
+          LABELS=$(jq -r '.labels[].name' pr.json | tr '\n' ' ')
+          echo "Labels: $LABELS"
+          case " $LABELS " in
+            *" color-refit "*) : ;; 
+            *) echo "Missing required label: color-refit" >&2; exit 1;;
+          esac
+
+          # Phase label detection
+          PHASE=""
+          for p in phase-0 phase-1 phase-2 phase-3 phase-4; do
+            if echo " $LABELS " | grep -q " $p "; then PHASE=$p; break; fi
+          done
+          if [ -z "$PHASE" ]; then
+            echo "Missing phase label (phase-0..phase-4)" >&2; exit 1
+          fi
+
+          # Require artefacts exist for the phase (at least one non-.gitkeep file)
+          folder="docs/retrofit_artifacts/${PHASE#phase-}"
+          if [ ! -d "$folder" ]; then
+            echo "Missing artefact folder: $folder" >&2; exit 1
+          fi
+          if ! find "$folder" -maxdepth 1 -type f ! -name .gitkeep | grep -q .; then
+            echo "No artefacts found in $folder (expect build logs / captures)" >&2; exit 1
+          fi
+
+          # Freeze: disallow router/I²S changes unless override labels present
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/pulls/$PRNUM/files?per_page=200" > files.json
+          ROUTER_TOUCH=$(jq -r '.[].filename' files.json | rg -n "^src/(dual_coordinator|dual_router)\\." | wc -l | tr -d ' ')
+          AUDIO_TOUCH=$(jq -r '.[].filename' files.json | rg -n "^src/(i2s_audio\\.h|core/i2s_audio_impl\\.cpp)$" | wc -l | tr -d ' ')
+          if [ "$ROUTER_TOUCH" != "0" ] && ! echo " $LABELS " | grep -q " allow-router-touch "; then
+            echo "Router/coordinator files modified without 'allow-router-touch' label" >&2; exit 1
+          fi
+          if [ "$AUDIO_TOUCH" != "0" ] && ! echo " $LABELS " | grep -q " allow-audio-touch "; then
+            echo "I2S/audio files modified without 'allow-audio-touch' label" >&2; exit 1
+          fi
+
+          # Dynamic allocation ban in diff (new code only)
+          git fetch origin "$BASE:refs/remotes/origin/$BASE"
+          git diff -U0 "origin/$BASE...HEAD" | rg -n "^\+.*\bnew\b|^\+.*delete\s*\[|^\+.*\bdelete\b" && {
+            echo "New dynamic allocation detected in diff; disallowed in hot path." >&2; exit 1; } || true
+
       - name: Generate compile_commands.json
         run: ./agent_runner.sh pio run -t compiledb
 
