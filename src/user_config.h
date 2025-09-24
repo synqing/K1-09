@@ -13,6 +13,12 @@
 //       to a rainbow but can be swapped with several pre-made themes by
 //       commenting/uncommenting one here or selecting via the UART menu
 
+// Color pipeline guard: enables gamma-aware HSV that outputs linear CRGB16
+// Keep default OFF until Phase 4 acceptance completes.
+#ifndef ENABLE_NEW_COLOR_PIPELINE
+#define ENABLE_NEW_COLOR_PIPELINE 0
+#endif
+
 // Color Refit: collaborative rollout guards
 // ENABLE_NEW_COLOR_PIPELINE — when 1, HSV path outputs linear CRGB16 (gamma-aware) to match palette LUTs.
 // Default OFF until Phase 4 acceptance; all PR slices must be releasable with this set to 0.

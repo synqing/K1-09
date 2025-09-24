@@ -14,6 +14,8 @@
 #include "palettes/palettes_bridge.h"
 #include "debug/debug_manager.h" // For organized debug output
 #include "debug/performance_monitor.h"
+// Color pipeline guard toggles
+#include "user_config.h"
 // Debug taps for color pipeline analysis
 #include "led_color_debug.h"
 
@@ -271,16 +273,34 @@ inline CRGB16 hsv(SQ15x16 h, SQ15x16 s, SQ15x16 v) {
   while (h > 1.0) { h -= 1.0; }
   while (h < 0.0) { h += 1.0; }
 
+#if ENABLE_NEW_COLOR_PIPELINE
+  // Gamma-aware HSV: convert FastLED CHSV output (sRGB) to linear space to match palette LUTs
+  CRGB fast = CHSV(uint8_t(h * 255.0f), uint8_t(s * 255.0f), 255);
+  constexpr float gamma_in = 2.2f; // match palettes conversion in palette_luts.cpp
+
+  float lr = powf(fast.r / 255.0f, gamma_in);
+  float lg = powf(fast.g / 255.0f, gamma_in);
+  float lb = powf(fast.b / 255.0f, gamma_in);
+
+  CRGB16 out;
+  out.r = SQ15x16(lr);
+  out.g = SQ15x16(lg);
+  out.b = SQ15x16(lb);
+
+  out.r *= v;
+  out.g *= v;
+  out.b *= v;
+  return out;
+#else
+  // Legacy HSV (non-gamma), preserved behind guard for rollback
   CRGB base_color = CHSV(uint8_t(h * 255.0), uint8_t(s * 255.0), 255);
 
   CRGB16 col = {{ base_color.r / 255.0 }, { base_color.g / 255.0 }, { base_color.b / 255.0 }};
-  //col = desaturate(col, SQ15x16(1.0) - s);
-
   col.r *= v;
   col.g *= v;
   col.b *= v;
-
   return col;
+#endif
 }
 
 inline void clip_led_values(CRGB16* buffer) { // Modified to accept buffer pointer
