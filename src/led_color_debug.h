@@ -60,7 +60,7 @@ static const char* DEBUG_RESET = "\033[0m";
 
 // Initialize LED color debugging
 #ifndef SB_LED_COLOR_DEBUG_IMPL
-inline void init_led_color_debug();
+void init_led_color_debug();
 #else
 inline void init_led_color_debug() {
     memset(&led_color_stats, 0, sizeof(led_color_stats));
@@ -105,7 +105,7 @@ inline void calculate_hsv_approximation(const CRGB16& color, float* hue, float* 
 
 // Detect color corruption patterns
 #ifndef SB_LED_COLOR_DEBUG_IMPL
-inline bool detect_color_corruption(const CRGB16& color, uint32_t frame_num);
+bool detect_color_corruption(const CRGB16& color, uint32_t frame_num);
 #else
 inline bool detect_color_corruption(const CRGB16& color, uint32_t frame_num) {
     bool corruption_detected = false;
@@ -142,7 +142,7 @@ inline bool detect_color_corruption(const CRGB16& color, uint32_t frame_num) {
 
 // Comprehensive color analysis with audio correlation
 #ifndef SB_LED_COLOR_DEBUG_IMPL
-inline void analyze_led_color_detailed(const CRGB16& color, uint32_t frame_num, float audio_energy = 0.0f);
+void analyze_led_color_detailed(const CRGB16& color, uint32_t frame_num, float audio_energy = 0.0f);
 #else
 inline void analyze_led_color_detailed(const CRGB16& color, uint32_t frame_num, float audio_energy = 0.0f) {
     static uint32_t debug_frame_counter = 0;
@@ -241,7 +241,7 @@ inline void debug_led_color_quick(const CRGB16& color, uint32_t frame_num) {
 
 // Print comprehensive color debugging statistics
 #ifndef SB_LED_COLOR_DEBUG_IMPL
-inline void print_led_color_stats();
+void print_led_color_stats();
 #else
 inline void print_led_color_stats() {
     USBSerial.printf("\n%s=== LED COLOR DEBUG STATISTICS ===%s\n", DEBUG_YELLOW, DEBUG_RESET);
@@ -282,7 +282,7 @@ inline void set_led_debug_verbose(bool enabled) {
 }
 
 #ifndef SB_LED_COLOR_DEBUG_IMPL
-inline void set_led_debug_interval(uint32_t interval);
+void set_led_debug_interval(uint32_t interval);
 #else
 inline void set_led_debug_interval(uint32_t interval) {
     led_debug_sample_interval = interval;

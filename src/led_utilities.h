@@ -488,11 +488,34 @@ inline void apply_brightness() {
   }
 
   clip_led_values(leds_16);
+
+#if ENABLE_BRIGHTNESS_METRICS
+  // Throttled once/second min/max report after brightness application (integration aid)
+  static uint32_t last_bright_log = 0;
+  uint32_t now_ms = millis();
+  if (now_ms - last_bright_log > 1000) {
+    last_bright_log = now_ms;
+    SQ15x16 minv = SQ15x16(1.0), maxv = SQ15x16(0.0);
+    for (uint16_t i = 0; i < NATIVE_RESOLUTION; ++i) {
+      if (leds_16[i].r < minv) minv = leds_16[i].r;
+      if (leds_16[i].g < minv) minv = leds_16[i].g;
+      if (leds_16[i].b < minv) minv = leds_16[i].b;
+      if (leds_16[i].r > maxv) maxv = leds_16[i].r;
+      if (leds_16[i].g > maxv) maxv = leds_16[i].g;
+      if (leds_16[i].b > maxv) maxv = leds_16[i].b;
+    }
+    USBSerial.printf("BR_RANGE min=%.3f max=%.3f\n", float(minv), float(maxv));
+  }
+#endif
 }
 
 inline void quantize_color(bool temporal_dithering) {
   // Front-write detector: ensure leds_out points to current back buffer
   ensure_primary_back_buffer();
+  // Optional dithering experiment: allow bypassing custom 8-step scheme (default OFF)
+#if ENABLE_DITHER_POLICY_EXPERIMENT
+  temporal_dithering = false;
+#endif
   if (temporal_dithering) {
     dither_step++;
     if (dither_step >= 8) {  // Updated for 8-frame dithering

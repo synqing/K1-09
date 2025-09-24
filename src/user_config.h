@@ -23,3 +23,19 @@
 #ifndef ENABLE_PALETTE_FACADE
 #define ENABLE_PALETTE_FACADE 0
 #endif
+
+// Phase 3 experimental toggles (default OFF; no behavior change until explicitly enabled)
+// If set to 1, Agent A can try alternate dithering policy (e.g., bypass custom 8-step)
+#ifndef ENABLE_DITHER_POLICY_EXPERIMENT
+#define ENABLE_DITHER_POLICY_EXPERIMENT 0
+#endif
+
+// If set to 1, log once/second min/max after master brightness for field parity checks
+#ifndef ENABLE_BRIGHTNESS_METRICS
+#define ENABLE_BRIGHTNESS_METRICS 0
+#endif
+
+// If set to 1, allow palette-mode incandescent tint experiments (policy TBD); keep 0 by default
+#ifndef ENABLE_INCANDESCENT_FOR_PALETTE
+#define ENABLE_INCANDESCENT_FOR_PALETTE 0
+#endif
