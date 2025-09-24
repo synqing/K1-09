@@ -1,0 +1,8 @@
+METRICS C(us)=1792 D(us)=5870
+METRICS A(us)=1039 B(us)=6461 rb=0/0
+FPS sys=206.1 led=124.9
+METRICS C(us)=1423 D(us)=5891
+METRICS A(us)=1044 B(us)=6674 rb=0/0
+FPS sys=208.0 led=135.4
+METRICS C(us)=1806 D(us)=5880
+METRICS A(us)=1062 B(us)=6652 rb=0/0

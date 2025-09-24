@@ -14,9 +14,9 @@
 //       commenting/uncommenting one here or selecting via the UART menu
 
 // Color pipeline guard: enables gamma-aware HSV that outputs linear CRGB16
-// Default ON for validation; set to 0 to revert legacy HSV quickly if needed.
+// Default OFF per workflow; testers can flip to 1 locally when validating.
 #ifndef ENABLE_NEW_COLOR_PIPELINE
-#define ENABLE_NEW_COLOR_PIPELINE 1
+#define ENABLE_NEW_COLOR_PIPELINE 0
 #endif
 
 // Future façade adoption guard (placeholder): toggle for migrating modes to palette_facade helpers.
