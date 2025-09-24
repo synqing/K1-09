@@ -269,17 +269,15 @@ void main_loop_core0() {
   perf_metrics.frame_start_time = t_now_us;
 #endif
 
-  // S3 Performance Validation Metrics
+  // S3 Performance Validation Metrics (printing gated)
   static uint32_t frame_count = 0;
   static uint32_t last_fps_print = 0;
-  
   frame_count++;
-  
+#if ENABLE_METRICS_LOGGING
   // Print performance metrics every 15 seconds
   if (t_now - last_fps_print > 15000) {
     xSemaphoreTake(serial_mutex, portMAX_DELAY);
     float actual_fps = frame_count / 5.0;
-    // Use debug manager for performance reporting (2.4 second interval with stagger)
     if (DebugManager::should_print(DEBUG_PERFORMANCE)) {
       DebugManager::print_s3_performance(actual_fps, g_race_condition_count);
       USBSerial.print("RB reads/miss: ");
@@ -293,6 +291,7 @@ void main_loop_core0() {
     last_fps_print = t_now;
     xSemaphoreGive(serial_mutex);
   }
+#endif
 
   // ---- Phase A: controls/settings/p2p/serial ----
   #if ENABLE_INPUTS_RUNTIME
@@ -623,6 +622,7 @@ void main_loop_core0() {
     g_last_c_avg_us = c_avg;
     g_last_d_avg_us = d_avg;
 
+    #if ENABLE_METRICS_LOGGING
     if (USBSerial) {
       float a_ms = a_avg / 1000.0f;
       float b_ms = b_avg / 1000.0f;
@@ -645,6 +645,7 @@ void main_loop_core0() {
         g_flip_violations = 0;
       }
     }
+    #endif
 
     // Reset windows
     a_time_acc_us = b_time_acc_us = 0;

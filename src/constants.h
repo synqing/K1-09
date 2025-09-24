@@ -123,6 +123,11 @@
 #define CURRENT_LIMITER_MA_PER_CHANNEL 5.0f
 #endif
 
+// Metrics logging (consolidated METRICS/FPS/RB lines)
+#ifndef ENABLE_METRICS_LOGGING
+#define ENABLE_METRICS_LOGGING 0
+#endif
+
 #define MAX_DOTS 320
 
 enum reserved_dots {
