@@ -38,7 +38,7 @@ Each entry documents the default value, its source, the rationale, and safe adju
 |----------------|---------|----------|---------|---------------------|
 | `ENABLE_CURRENT_LIMITER` | `1` | `src/constants.h:…` | Compile-time gate for limiter scaffold | Keep enabled (build-time); runtime is off by default. |
 | `g_current_limiter_enabled` | `false` | `src/core/globals.cpp:…` | Runtime gate to activate limiter | Toggle via serial/UI once exposed. |
-| `CURRENT_LIMITER_MA_PER_CHANNEL` | `20.0` mA | `src/constants.h:…` | Per-channel max current for WS2812 variant | IMPORTANT: depends on LED package (e.g., 5050 WS2812B ≈ 20 mA/channel; 3535/2020 may be lower: 5–12 mA). Confirm package and update. |
+| `CURRENT_LIMITER_MA_PER_CHANNEL` | `5.0` mA | `src/constants.h:…` | Per-channel max current for WS2812 variant | Set for 1515 package (≈5 mA/channel). If your 1515 datasheet differs, update accordingly. 5050 WS2812B typically ≈20 mA/channel. |
 | `CONFIG.MAX_CURRENT_MA` | `1500` mA | `src/core/globals.cpp:38` | Total budget (both strips combined) | Limiter scales uniformly when estimate exceeds budget. |
 | `g_current_limit_engaged` | counter | `src/core/globals.cpp:…` | Counts limiter activations | Planned to surface in METRICS in Phase 5 metrics extension. |
 | `g_current_estimate_ma_ema` | mA (float) | `src/core/globals.cpp:…` | Smoothed current estimate (EMA) | For debugging/telemetry; not persisted. |

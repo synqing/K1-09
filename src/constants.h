@@ -118,9 +118,9 @@
 #define ENABLE_CURRENT_LIMITER 1
 #endif
 // Per-channel max current (mA) at full white for given LED package.
-// Default 20 mA aligns with classic WS2812B 5050 package (3 channels -> ~60 mA/pixel at 255,255,255).
+// 1515 micro WS2812 variants are commonly rated around 5 mA/channel (≈15 mA/pixel at 255,255,255).
 #ifndef CURRENT_LIMITER_MA_PER_CHANNEL
-#define CURRENT_LIMITER_MA_PER_CHANNEL 20.0f
+#define CURRENT_LIMITER_MA_PER_CHANNEL 5.0f
 #endif
 
 #define MAX_DOTS 320
