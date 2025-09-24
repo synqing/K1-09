@@ -1,7 +1,8 @@
 Title: <type>(color): <scope> (phaseX)
 
 Summary
-- What changed and why (one paragraph). Link to K1-09_color_refit_plan.md section and phase.
+- What changed and why (one paragraph).
+- Reference: docs/COLOR_REFIT_GIT_WORKFLOW.md and Reference.docs/K1-09_color_refit_plan.md (section + phase).
 
 Agents Involved
 - [ ] Agent 1 — Core Implementation
