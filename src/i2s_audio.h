@@ -97,12 +97,14 @@ void acquire_sample_chunk(uint32_t t_now) {
     i2s_read(I2S_PORT, dest + partial_bytes, bytes_expected - partial_bytes, &n, pdMS_TO_TICKS(1));
     if (n > 0) {
       partial_bytes += n;
+      g_rb_partial_bytes = partial_bytes;
     }
     if (partial_bytes >= bytes_expected) {
       break;
     }
     if ((micros() - start_us) > soft_deadline_us) {
       g_rb_deadline_miss++;
+      g_rb_partial_bytes = partial_bytes;
       // Leave partial_bytes as-is for next frame; skip processing to keep loop responsive
       return;
     }
@@ -110,6 +112,7 @@ void acquire_sample_chunk(uint32_t t_now) {
   // We have a complete chunk accumulated
   g_rb_reads++;
   partial_bytes = 0;
+  g_rb_partial_bytes = 0;
 
   if (debug_mode && (t_now % 5000 == 0)) {
     USBSerial.print("DEBUG: Bytes read from I2S: ");

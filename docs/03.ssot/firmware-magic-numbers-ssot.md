@@ -32,6 +32,19 @@ Each entry documents the default value, its source, the rationale, and safe adju
 | `CONFIG.TEMPORAL_DITHERING` | `true` | `src/core/globals.cpp:39` | Enables 8-step temporal dithering | Quantiser honours this flag when mapping to 8-bit. |
 | `g_led_front_idx` / `g_led_back_idx` | `0` / `1` | `src/core/globals.cpp:377-378` | Async double-buffer indices | Toggle after each `FastLED.show()` (`src/led_utilities.h:1179-1187`). |
 
+### Current Limiter (Phase 5)
+
+| Symbol / Field | Default | Location | Purpose | Notes / Safe Range |
+|----------------|---------|----------|---------|---------------------|
+| `ENABLE_CURRENT_LIMITER` | `1` | `src/constants.h:…` | Compile-time gate for limiter scaffold | Keep enabled (build-time); runtime is off by default. |
+| `g_current_limiter_enabled` | `false` | `src/core/globals.cpp:…` | Runtime gate to activate limiter | Toggle via serial/UI once exposed. |
+| `CURRENT_LIMITER_MA_PER_CHANNEL` | `20.0` mA | `src/constants.h:…` | Per-channel max current for WS2812 variant | IMPORTANT: depends on LED package (e.g., 5050 WS2812B ≈ 20 mA/channel; 3535/2020 may be lower: 5–12 mA). Confirm package and update. |
+| `CONFIG.MAX_CURRENT_MA` | `1500` mA | `src/core/globals.cpp:38` | Total budget (both strips combined) | Limiter scales uniformly when estimate exceeds budget. |
+| `g_current_limit_engaged` | counter | `src/core/globals.cpp:…` | Counts limiter activations | Planned to surface in METRICS in Phase 5 metrics extension. |
+| `g_current_estimate_ma_ema` | mA (float) | `src/core/globals.cpp:…` | Smoothed current estimate (EMA) | For debugging/telemetry; not persisted. |
+
+Estimation method (uniform): sum of 8-bit RGB across pixels scaled by `CURRENT_LIMITER_MA_PER_CHANNEL / 255`, aggregated across both strips; uniform post-quantization scaling applied when over budget. See `show_leds()` in `src/led_utilities.h`.
+
 ## Coordinator, Router & Coupling
 
 | Symbol / Field | Default | Location | Purpose | Notes / Safe Range |
