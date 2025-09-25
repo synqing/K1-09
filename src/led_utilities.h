@@ -864,6 +864,8 @@ inline void scale_to_strip() {
 
 inline void show_leds() {
   static uint16_t stage_burst_frames = 0; // emit detailed logs when non-zero
+  static uint32_t last_show_log_ms = 0;
+  constexpr uint32_t kShowLogIntervalMs = 200;  // milliseconds between log lines when idle
   bool in_burst_mode = (stage_burst_frames > 0);
 
   uint32_t ready_seq = g_frame_seq_ready;
@@ -872,13 +874,18 @@ inline void show_leds() {
     FastLED.show();
     return;
   }
+  uint32_t now_ms = millis();
+  bool should_log_frame = debug_mode && (in_burst_mode || (now_ms - last_show_log_ms >= kShowLogIntervalMs));
+  if (should_log_frame) {
+    Serial.println(F("[SHOW] new frame detected"));
+  }
   g_frame_seq_shown = ready_seq;
 
   // SIMPLE TEST: Print every 3 seconds to confirm our code is running
   static uint32_t last_test_print = 0;
-  if (kEnableShowLedsHeartbeat && millis() - last_test_print > 3000) {
+  if (kEnableShowLedsHeartbeat && now_ms - last_test_print > 3000) {
     USBSerial.printf("[TEST] show_leds() running, PALETTE_INDEX=%d\n", CONFIG.PALETTE_INDEX);
-    last_test_print = millis();
+    last_test_print = now_ms;
   }
 
   // STAGE 1 DEBUG MOVED TO main.cpp after lightshow mode execution
@@ -980,6 +987,17 @@ inline void show_leds() {
   render_ui();
   clip_led_values(leds_16);
   scale_to_strip();
+  if (should_log_frame) {
+    auto to_f = [](const SQ15x16& v) { return static_cast<double>(float(v)); };
+    Serial.printf("[SHOW] scaled[0]=(%.3f,%.3f,%.3f) out[0]=(%u,%u,%u)\n",
+                  to_f(leds_scaled ? leds_scaled[0].r : SQ15x16(0)),
+                  to_f(leds_scaled ? leds_scaled[0].g : SQ15x16(0)),
+                  to_f(leds_scaled ? leds_scaled[0].b : SQ15x16(0)),
+                  leds_out ? leds_out[0].r : 0,
+                  leds_out ? leds_out[0].g : 0,
+                  leds_out ? leds_out[0].b : 0);
+    last_show_log_ms = now_ms;
+  }
   const bool stage4_any = (leds_scaled != nullptr) ?
       leds_any_nonzero(leds_scaled, CONFIG.LED_COUNT) : false;
   TRACE_EVENT(TRACE_CAT_LED, LED_CALC_START,

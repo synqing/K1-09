@@ -342,7 +342,7 @@ DEFINE_GRADIENT_PALETTE(Crameri_Turku_gp){
 
 // --------------------------- Playlist & human-readable names --------------------
 
-const TProgmemRGBGradientPaletteRef gCrameriPalettes[] = {
+extern const TProgmemRGBGradientPaletteRef gCrameriPalettes[] = {
   Crameri_Vik_gp,     // 0
   Crameri_Tokyo_gp,   // 1
   Crameri_Roma_gp,    // 2
@@ -369,10 +369,10 @@ const TProgmemRGBGradientPaletteRef gCrameriPalettes[] = {
   Crameri_Turku_gp    // 23
 };
 
-constexpr uint8_t gCrameriPaletteCount =
+extern const uint8_t gCrameriPaletteCount =
   static_cast<uint8_t>(sizeof(gCrameriPalettes) / sizeof(TProgmemRGBGradientPaletteRef));
 
-const char* const CrameriPaletteNames[] = {
+extern const char* const CrameriPaletteNames[] = {
   "Vik", "Tokyo", "Roma", "Oleron", "Lisbon", "LaJolla",
   "Hawaii", "Devon", "Cork", "Broc", "Berlin", "Bamako",
   "Acton", "Batlow", "Bilbao", "Buda", "Davos", "GrayC",
@@ -383,7 +383,7 @@ const char* const CrameriPaletteNames[] = {
 // All arrays below align 1:1 with gCrameriPalettes[] by index.
 
 // Coarse perceived brightness (0–255). Tune to taste after on-strip validation.
-constexpr uint8_t crameri_palette_avg_Y[] = {
+extern const uint8_t crameri_palette_avg_Y[] = {
   /*  0 Vik     */ 170,
   /*  1 Tokyo   */ 180,
   /*  2 Roma    */ 160,
@@ -411,7 +411,7 @@ constexpr uint8_t crameri_palette_avg_Y[] = {
 };
 
 // Palette characteristics (bitfield). For diverging palettes, WARM|COOL is set together.
-constexpr uint8_t crameri_palette_flags[] = {
+extern const uint8_t crameri_palette_flags[] = {
   /*  0 Vik     */ PAL_COOL | PAL_WARM |              PAL_VIVID | PAL_WHITE_HEAVY,
   /*  1 Tokyo   */ PAL_WARM | PAL_COOL | PAL_HIGH_SAT | PAL_VIVID | PAL_WHITE_HEAVY,
   /*  2 Roma    */ PAL_WARM | PAL_COOL |              PAL_VIVID,
@@ -439,7 +439,7 @@ constexpr uint8_t crameri_palette_flags[] = {
 };
 
 // Per-palette brightness ceiling (0–255). Tames power on light/near-white regions.
-constexpr uint8_t crameri_palette_max_brightness[] = {
+extern const uint8_t crameri_palette_max_brightness[] = {
   /*  0 Vik     */ 220,
   /*  1 Tokyo   */ 220,
   /*  2 Roma    */ 255,

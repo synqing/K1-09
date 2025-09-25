@@ -99,11 +99,10 @@ private:
         bool palette_mode = false;
     };
 
-    static constexpr uint8_t kPrimaryEncoder = 0;   // Scroll2 (SDA=1,SCL=2)
-    static constexpr uint8_t kSecondaryEncoder = 1; // Scroll1 (SDA=3,SCL=4)
+    static constexpr uint8_t kPrimaryEncoder = 0;   // Single Scroll unit (SDA=3,SCL=4)
 
     EncoderManager manager_;
-    ChannelState channel_state_[2];
+    ChannelState channel_state_[1];
 
     void handleChannelEvent(uint8_t channel, const EncoderEvent& event);
     void adjustBrightness(uint8_t channel, int32_t ticks, uint32_t timestamp_ms);

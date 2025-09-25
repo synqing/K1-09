@@ -584,36 +584,24 @@ DualEncoderController::DualEncoderController() {
     EncoderHardwareConfig primary_config;
     primary_config.wire = &Wire;
     primary_config.address = 0x40;
-    primary_config.sda_pin = 1;
-    primary_config.scl_pin = 2;
+    primary_config.sda_pin = 3;
+    primary_config.scl_pin = 4;
     primary_config.bus_speed_hz = 400000U;
     manager_.setHardwareConfig(kPrimaryEncoder, primary_config);
 
-    EncoderHardwareConfig secondary_config;
-    secondary_config.wire = &Wire1;
-    secondary_config.address = 0x40;
-    secondary_config.sda_pin = 3;
-    secondary_config.scl_pin = 4;
-    secondary_config.bus_speed_hz = 400000U;
-    manager_.setHardwareConfig(kSecondaryEncoder, secondary_config);
-
     channel_state_[0] = ChannelState{};
-    channel_state_[1] = ChannelState{};
 }
 
 bool DualEncoderController::begin(bool verbose) {
     bool ok = manager_.begin(verbose);
 
     channel_state_[0].palette_mode = (CONFIG.PALETTE_INDEX != 0);
-    channel_state_[1].palette_mode = channel_state_[0].palette_mode;
 
     DebugManager::preset_minimal();
 
     if (verbose && USBSerial) {
-        USBSerial.printf("[HMI] Scroll2 (SDA=1,SCL=2) -> Channel1 %s\n",
+        USBSerial.printf("[HMI] Scroll (SDA=3,SCL=4) -> Channel1 %s\n",
                          ok && manager_.available(kPrimaryEncoder) ? "ONLINE" : "OFFLINE");
-        USBSerial.printf("[HMI] Scroll1 (SDA=3,SCL=4) -> Channel2 %s\n",
-                         ok && manager_.available(kSecondaryEncoder) ? "ONLINE" : "OFFLINE");
     }
 
     return ok;
@@ -624,13 +612,16 @@ void DualEncoderController::update(uint32_t now_ms) {
 
     EncoderEvent event;
     while (manager_.popEvent(event)) {
-        if (event.encoder_id == kPrimaryEncoder || event.encoder_id == kSecondaryEncoder) {
+        if (event.encoder_id == kPrimaryEncoder) {
             handleChannelEvent(event.encoder_id, event);
         }
     }
 }
 
 void DualEncoderController::handleChannelEvent(uint8_t channel, const EncoderEvent& event) {
+    if (channel >= (sizeof(channel_state_) / sizeof(channel_state_[0]))) {
+        return;
+    }
     int32_t ticks = -event.rotation;  // Align physical orientation
 
     if (ticks != 0) {
@@ -652,61 +643,46 @@ void DualEncoderController::handleChannelEvent(uint8_t channel, const EncoderEve
 }
 
 void DualEncoderController::adjustBrightness(uint8_t channel, int32_t ticks, uint32_t timestamp_ms) {
+    if (channel >= (sizeof(channel_state_) / sizeof(channel_state_[0]))) {
+        return;
+    }
     float delta = kBrightnessStep * static_cast<float>(ticks);
 
-    if (channel == kPrimaryEncoder) {
-        float new_value = clampFloat(CONFIG.PHOTONS + delta, 0.0f, 1.0f);
-        if (new_value != CONFIG.PHOTONS) {
-            CONFIG.PHOTONS = new_value;
-            ::knob_photons.last_change = timestamp_ms;
-            ::settings_updated = true;
-            save_config_delayed();
-            if (debug_mode && USBSerial) {
-                USBSerial.printf("[HMI] Channel 1 brightness -> %.3f\n", CONFIG.PHOTONS);
-            }
-        }
-    } else {
-        float new_value = clampFloat(SECONDARY_PHOTONS + delta, 0.0f, 1.0f);
-        if (new_value != SECONDARY_PHOTONS) {
-            SECONDARY_PHOTONS = new_value;
-            ::settings_updated = true;
-            save_config_delayed();
-            if (debug_mode && USBSerial) {
-                USBSerial.printf("[HMI] Channel 2 brightness -> %.3f\n", SECONDARY_PHOTONS);
-            }
+    float new_value = clampFloat(CONFIG.PHOTONS + delta, 0.0f, 1.0f);
+    if (new_value != CONFIG.PHOTONS) {
+        CONFIG.PHOTONS = new_value;
+        ::knob_photons.last_change = timestamp_ms;
+        ::settings_updated = true;
+        save_config_delayed();
+        if (debug_mode && USBSerial) {
+            USBSerial.printf("[HMI] Channel 1 brightness -> %.3f\n", CONFIG.PHOTONS);
         }
     }
 }
 
 void DualEncoderController::adjustLightshow(uint8_t channel, int32_t ticks, uint32_t /*timestamp_ms*/) {
+    if (channel >= (sizeof(channel_state_) / sizeof(channel_state_[0]))) {
+        return;
+    }
     if (ticks == 0) {
         return;
     }
 
-    if (channel == kPrimaryEncoder) {
-        int new_mode = wrapMode(static_cast<int>(CONFIG.LIGHTSHOW_MODE) + ticks);
-        if (new_mode != CONFIG.LIGHTSHOW_MODE) {
-            CONFIG.LIGHTSHOW_MODE = static_cast<uint8_t>(new_mode);
-            ::settings_updated = true;
-            save_config_delayed();
-            if (debug_mode) {
-                USBSerial.printf("[HMI] Channel 1 lightshow -> %u\n", CONFIG.LIGHTSHOW_MODE);
-            }
-        }
-    } else {
-        int new_mode = wrapMode(static_cast<int>(SECONDARY_LIGHTSHOW_MODE) + ticks);
-        if (new_mode != SECONDARY_LIGHTSHOW_MODE) {
-            SECONDARY_LIGHTSHOW_MODE = static_cast<uint8_t>(new_mode);
-            ::settings_updated = true;
-            save_config_delayed();
-            if (debug_mode) {
-                USBSerial.printf("[HMI] Channel 2 lightshow -> %u\n", SECONDARY_LIGHTSHOW_MODE);
-            }
+    int new_mode = wrapMode(static_cast<int>(CONFIG.LIGHTSHOW_MODE) + ticks);
+    if (new_mode != CONFIG.LIGHTSHOW_MODE) {
+        CONFIG.LIGHTSHOW_MODE = static_cast<uint8_t>(new_mode);
+        ::settings_updated = true;
+        save_config_delayed();
+        if (debug_mode) {
+            USBSerial.printf("[HMI] Channel 1 lightshow -> %u\n", CONFIG.LIGHTSHOW_MODE);
         }
     }
 }
 
 void DualEncoderController::toggleMode(uint8_t channel) {
+    if (channel >= (sizeof(channel_state_) / sizeof(channel_state_[0]))) {
+        return;
+    }
     auto& state = channel_state_[channel];
     state.mode = (state.mode == ChannelControlMode::Brightness)
                      ? ChannelControlMode::Lightshow
@@ -714,12 +690,15 @@ void DualEncoderController::toggleMode(uint8_t channel) {
 
     if (debug_mode) {
         USBSerial.printf("[HMI] Channel %u mode -> %s\n",
-                         channel == kPrimaryEncoder ? 1 : 2,
+                         static_cast<unsigned>(channel + 1),
                          state.mode == ChannelControlMode::Brightness ? "Brightness" : "Lightshow");
     }
 }
 
 void DualEncoderController::togglePalette(uint8_t channel) {
+    if (channel >= (sizeof(channel_state_) / sizeof(channel_state_[0]))) {
+        return;
+    }
     auto& state = channel_state_[channel];
     state.palette_mode = !state.palette_mode;
 
@@ -738,7 +717,6 @@ void DualEncoderController::togglePalette(uint8_t channel) {
     // Keep both channel states aligned with the actual palette mode
     bool palette_active = (CONFIG.PALETTE_INDEX != 0);
     channel_state_[0].palette_mode = palette_active;
-    channel_state_[1].palette_mode = palette_active;
 
     ::settings_updated = true;
     save_config_delayed();

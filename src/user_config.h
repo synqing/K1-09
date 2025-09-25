@@ -12,3 +12,7 @@
 // TODO: CRGBPalette16/lookups in place of all CHSV usage, which defaults
 //       to a rainbow but can be swapped with several pre-made themes by
 //       commenting/uncommenting one here or selecting via the UART menu
+
+#ifndef SB_ENABLE_LC_RENDER
+#define SB_ENABLE_LC_RENDER 1
+#endif

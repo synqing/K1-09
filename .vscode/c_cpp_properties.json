@@ -10,6 +10,7 @@
             "includePath": [
                 "/Users/spectrasynq/Workspace_Management/Software/K1-09/include",
                 "/Users/spectrasynq/Workspace_Management/Software/K1-09/src",
+                "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SPIFFS/src",
                 "/Users/spectrasynq/Workspace_Management/Software/K1-09/lib/M5UnitScroll/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/WiFi/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/Ticker/src",
@@ -235,7 +236,6 @@
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/RainMaker/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SD/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SD_MMC/src",
-                "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SPIFFS/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SimpleBLE/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/USB/src",
                 "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/Update/src",
@@ -249,6 +249,7 @@
                 "path": [
                     "/Users/spectrasynq/Workspace_Management/Software/K1-09/include",
                     "/Users/spectrasynq/Workspace_Management/Software/K1-09/src",
+                    "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SPIFFS/src",
                     "/Users/spectrasynq/Workspace_Management/Software/K1-09/lib/M5UnitScroll/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/WiFi/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/Ticker/src",
@@ -474,7 +475,6 @@
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/RainMaker/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SD/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SD_MMC/src",
-                    "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SPIFFS/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/SimpleBLE/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/USB/src",
                     "/Users/spectrasynq/.platformio/packages/framework-arduinoespressif32@3.20006.221224/libraries/Update/src",
