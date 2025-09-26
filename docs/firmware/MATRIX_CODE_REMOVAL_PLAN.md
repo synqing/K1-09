@@ -300,7 +300,7 @@ graph LR
 └────────────────────────────────────────────────┘
 ```
 
-**Code Transformation:**
+**Code Transformation:** *(Updated 2025-09-21: `HardwareConfig` now maps Strip 1/2 data to GPIO9/GPIO10 respectively.)*
 ```cpp
 // BEFORE: Conditional nightmare
 #if LED_STRIPS_MODE

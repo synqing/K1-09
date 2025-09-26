@@ -15,7 +15,7 @@
 > **Status**: Phases 0–3 are complete — LC now drives the LEDs on hardware. Phase 4 cleanup and Phase 5 audio-reactive expansion remain.
 
 ### ✅ Current Deployment Snapshot
-- LC render path (`render_lc_frame()` in `src/lc/runtime.cpp`) is live behind `SB_ENABLE_LC_RENDER = 1` and maintains telemetry handshakes.
+- LC render path (`render_lc_frame()` in `src/lc/runtime.cpp`) now drives both strips unconditionally while maintaining legacy frame handshakes.
 - Palette bridge uses the shared `src/palettes/Palettes_Crameri.h`; LC `PaletteManager` refreshes SB palettes each frame.
 - HMI stack is running the single Scroll unit on SDA=3/SCL=4 (see `src/hmi/dual_encoder_controller.*`), with encoder diagnostics trimmed for normal runs.
 
@@ -194,32 +194,31 @@ sequenceDiagram
     copy_to_sb_buffers();
   }
   ```
-- The LED thread (`led_thread` in `src/main.cpp`) swaps between LC and legacy rendering with `SB_ENABLE_LC_RENDER`, preserving the handshake (`begin_frame()`, `publish_frame()`, `show_leds()`).
+- The LED thread (`led_thread` in `src/main.cpp`) drives the LC renderer directly while preserving the existing handshake (`begin_frame()`, `publish_frame()`, `show_leds()`).
 - `copy_to_sb_buffers()` scales CRGB 0–255 into `SQ15x16` and mirrors into `leds_16_prev` / `leds_16_fx`, ensuring SB post-processing and telemetry stay intact.
 - Hardware smoke tests show non-zero `[LC]` / `[LC->SB]` logs, with encoder input modulating brightness/scene selection via the LC tunables.
 
 **Exit Criteria**
-- `SB_ENABLE_LC_RENDER` runtime toggle flips between legacy and LC output without rebooting.
 - LC render path sustains ≥45 FPS in `perf_metrics.led_fps`.
 - Telemetry packets (`TRACE_CAT_LED`) record frame transitions in both modes.
 - Bench test shows static LC palette and at least one audio-reactive LC effect responding to `current_punch`.
 
 ### Phase 4 – `SCAR-REMOVAL` (🟡 In progress)
 > Focus: retire legacy visual code now that LC rendering is proven. Use the checklist below to track remaining cleanup tasks.
-1. Once LC rendering is stable, delete or archive legacy modules:
-   - `src/lightshow_modes.*`
-   - Palette bridge (`palettes_bridge.h`, `src/palettes/`)
-   - Unused sections of `led_utilities.*`
-2. Remove unused constants/macros from `src/constants.h`.
-3. Update documentation:
-   - Replace Visual Pipeline section in `docs/firmware/pipelines.md` with LC architecture.
-   - Add reference to this manual.
-4. Run `pio run` and perform hardware regression to confirm no behavioural drift.
+1. Legacy modules retired:
+   - ✅ `src/lightshow_modes.*`
+   - ✅ Palette bridge (`palettes_bridge.h`, `src/palettes/`)
+   - 🚧 Continue trimming unused helpers in `led_utilities.*`
+2. ✅ Removed obsolete lightshow macros from `src/constants.h`.
+3. Documentation updates in flight:
+   - Rewrite `docs/firmware/pipelines.md` around the LC architecture.
+   - Link migration manual from firmware docs once updates land.
+4. ✅ Regression build (`pio run`) passes with LC-only pipeline.
 
 **Exit Criteria**
-- Legacy visual sources (`src/lightshow_modes.*`, palettes, unused `led_utilities` helpers) removed or archived under `Reference.docs/`.
-- `docs/firmware/pipelines.md` rewritten to document LC pipeline; legacy description retained only in release notes.
-- No production code references `LIGHT_MODE_*` or legacy palette bridges.
+- Legacy visual sources removed from firmware; any historical references live under `Reference.docs/`.
+- `docs/firmware/pipelines.md` refreshed to explain the LC flow; release notes capture legacy behaviour.
+- No production code references `LIGHT_MODE_*` or palette bridge helpers.
 - Regression run (`pio run`) and telemetry sanity checks match pre-swap baselines.
 
 ### Phase 5 – `AUDIO-REACTOR` (⏳ Planned)
@@ -260,7 +259,7 @@ mindmap
 | Component | Legacy Location | LC Counterpart / Action |
 |-----------|-----------------|-------------------------|
 | Audio producer | `src/i2s_audio.h`, `src/GDFT*.h`, `audio_*` | **Preserve**; expose metrics via bridge |
-| Legacy visuals | `src/lightshow_modes.*`, `src/led_utilities.*` | **Phase 4 removal** |
+| Legacy visuals | LC `FxEngine` + `led_utilities.*` | **Phase 4 cleanup (helpers only)** |
 | LC core | `src/lc/core/**` | Imported in Phase 1 |
 | Effects | `src/lc/effects/**` | Imported; expand with audio-reactive variants |
 | Post-processing | `src/lc/main/applyPostProcessing` | Adapted into `render_lc_frame()` |

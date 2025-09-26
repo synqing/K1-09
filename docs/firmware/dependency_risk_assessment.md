@@ -10,7 +10,6 @@ Generated from `analysis/deps_report.json` (commit `fc42d99` when exported). Use
 | 3 | `src/globals.h` | 31 | 17 | 14 | 0 | Primary dependency hotspot; 17 compilation units depend on it. Candidate for staged interface splits. |
 | 4 | `src/constants.h` | 25 | 17 | 5 | 3 | Consumed by nearly every translation unit; verification required after each change. |
 | 5 | `src/led_utilities.h` | 19 | 2 | 17 | 0 | High fan-out; should expose slimmer public surface for LED helpers. |
-| 6 | `src/lightshow_modes.h` | 11 | 1 | 10 | 0 | Large header-only implementation. Queue for mechanical split (`header_split` template). |
 | 7 | `src/encoders.h` | 11 | 0 | 11 | 0 | Controls HMI state machine; dependency pruning needed before additional hardware support. |
 | 8 | `src/palettes/palette_luts_api.h` | 9 | 7 | 2 | 0 | Shared palette metadata; ensure API contract before modularization. |
 | 9 | `src/debug/debug_manager.h` | 9 | 7 | 2 | 0 | Debug instrumentation crosscuts modules; isolate via forward declarations. |
@@ -19,7 +18,6 @@ Generated from `analysis/deps_report.json` (commit `fc42d99` when exported). Use
 _No cycles or duplicate symbol definitions were detected in this pass (see `analysis/deps_report.json`)._
 
 ## 2. Recommended Header Split Order
-1. `src/lightshow_modes.h` – High fan-out, no symbol definitions; mechanical split reduces compile time and risk.
 2. `src/led_utilities.h` – Prepare public vs private headers before introducing module boundary guardrails.
 3. `src/globals.h` – Execute staged extraction (Audio, Visual, HMI, Comms) following Task-Master tickets.
 4. `src/main.cpp` – After dependent headers slimmed, extract platform bootstrap into `core/system_init.*`.

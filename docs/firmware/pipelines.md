@@ -33,39 +33,35 @@
 | Goertzel transform | `process_GDFT()` (`src/GDFT.h:60-166`) | `magnitudes_normalized[i]` | `float[NUM_FREQS]` | ≥0 (A-weighted) | LED spectral consumers | `NUM_FREQS = 64` (constants), `frequencies[i].block_size` from `system.h:287`. Magic constant `0x5f375a86` used for reciprocal sqrt optimisation.
 | Noise calibration | `process_GDFT()` (`src/GDFT.h:168-210`) | `noise_samples`, `noise_complete` | `SQ15x16[64]` | 0–1 normalized | Same stage | Calibration window: 256 iterations; `CONFIG.DC_OFFSET` recomputed and persisted.
 | Spectrogram smoothing | `process_GDFT()` (`src/GDFT.h:212-302`) | `spectrogram`, `spectrogram_smooth`, `chromagram_smooth` | `SQ15x16[]`, `float[]` | 0–1 normalized | Light modes, serial debug | Exponential smoothing factors: `0.3` for magnitude EMA, `0.1` for novelty.
-| Audio metrics export | `process_GDFT()` and `serial_menu` | `note_spectrogram`, `chromagram` etc. | `float`, `SQ15x16` arrays | Varies 0–1 | `lightshow_modes.h`, `serial_menu` | `CONFIG.CHROMAGRAM_RANGE` default 60 (notes), ensures index safety via `safe_notes_access()` in `system.h:242`.
+| Audio metrics export | `lc/audio_bridge::collect_audio_metrics()` | `AudioMetrics` (spectrogram, chroma, punch) | `float`, `SQ15x16` arrays | 0–1 normalized | `lc/runtime::render_lc_frame()` | Metrics feed LC tunables; `CONFIG.CHROMAGRAM_RANGE` still guards chroma smoothing. |
 
 ### 2.2 Producer/Consumer Matrix
 
 | Symbol | Producer | Primary Consumers |
 |--------|----------|-------------------|
 | `audio_raw_state.samples_raw_` | `i2s_audio` | Scaling stage only |
-| `waveform` | `audio_processed_state` | `lightshow_modes`, `serial_menu`, `test_audio_diagnostics` |
-| `waveform_fixed_point` | `audio_processed_state` | `GDFT` (fixed-point helpers), `lightshow_modes` |
+| `waveform` | `audio_processed_state` | `lc/audio_bridge`, serial diagnostics |
+| `waveform_fixed_point` | `audio_processed_state` | `process_GDFT`, diagnostics |
 | `sample_window` | `i2s_audio` | `process_GDFT` |
-| `magnitudes_normalized` | `process_GDFT` | `spectrogram`, `noise_cal`, `lightshow_modes` |
-| `spectrogram` / `_smooth` | `process_GDFT` | `lightshow_modes` (spectral render paths), `palettes_bridge` |
+| `magnitudes_normalized` | `process_GDFT` | Smoothing stage, LC metrics bridge |
+| `spectrogram` / `_smooth` | `process_GDFT` | `lc/audio_bridge`, serial menu |
 | `chromagram` | `process_GDFT` | `LIGHT_MODE_GDFT_CHROMAGRAM*`, serial reporting |
-| `silent_scale`, `current_punch` | `i2s_audio` | `lightshow_modes` gating (e.g., Bloom energy), `led_utilities` |
+| `silent_scale`, `current_punch` | `i2s_audio` | LC effect modulation, `led_utilities` |
 
 ## 3. Visual Pipeline Overview
 ```
-[spectrogram/chromagram] --> lightshow_modes::<mode>() --> leds_16 buffers (CRGB16)
-   -> led_utilities::apply_gamma/dither -> FastLED controller --> strips
+[spectrogram/chromagram] --> lc::collect_audio_metrics() --> FxEngine.render() --> leds_16 buffers (CRGB16)
+   -> led_utilities::compose_frame() -> FastLED controller --> strips
 ```
 
 ### 3.1 Stage Catalog
 
 | Stage | Producer | Output | Type / Shape | Nominal Range | Consumers | Notes |
 |-------|----------|--------|--------------|---------------|-----------|-------|
-| LED Frame Init | `led_thread()` (`src/main.cpp:406-520`) | `leds_16`, `leds_16_fx`, `leds_16_ui` | `CRGB16[CONFIG.LED_COUNT]` | 0.0–1.0 (Q8.8) | Mode renderers | Frame seq counters `g_frame_seq_*` ensure producer/consumer sync.
-| Palette preparation | `led_utilities::update_palette_buffers()` (`src/led_utilities.h:52-162`) | `palette_*` LUTs | `CRGB16[]`, `SQ15x16[]` | 0.0–1.0 | Light modes | Magic numbers: dithering table `dither_table[8]`, clamp `SATURATION` 0–1.
-| Mode dispatch | `lightshow_modes::render_active_mode()` (`src/lightshow_modes.h:38-173`) | Mode-specific buffers | `CRGB16[]`, floats | 0–1 | LED output, debug overlay | Uses `CONFIG.LIGHTSHOW_MODE`, `CONFIG.MIRROR_ENABLED`.
-| GDFT mode (default) | `light_mode_gdft()` (`src/lightshow_modes.h:175-370`) | `leds_16_fx` spectral columns | `CRGB16[160]` | 0–1 | LED compositing | Consumes `spectrogram_smooth`, uses `CONFIG.PHOTONS` brightness and notes-based hue via `hue_lookup[NUM_FREQS]`.
-| Chromagram variants | `light_mode_gdft_chromagram_*` | `leds_16_fx` | `CRGB16[]` | 0–1 | LED compositing | Depend on `chromagram_smooth[12]`; requires `CONFIG.CHROMAGRAM_RANGE` alignment.
-| Bloom mode | `light_mode_bloom()` (`src/lightshow_modes.h:520-704`) | `leds_16_fx`, `leds_16_prev_secondary` | `CRGB16[]` | 0–1 (with decay) | LED compositing | Magic numbers: `BLOOM_DECAY = 0.78`, `SPARKLE_THRESHOLD = 0.45`. Relies on `current_punch` and `silent_scale` for gating.
-| Quantum Collapse | `light_mode_quantum_collapse()` (`src/lightshow_modes.h:707-1040`) | Particle buffers & `leds_16_fx` | `float[]`, `CRGB16[]` | 0–1 / world units | LED compositing | Uses physics constants: `FLUID_DIFFUSION = 0.035`, `PARTICLE_DRAG = 0.98`, `collapse_probability` formula tuned for drum hits.
-| Waveform mode | `light_mode_waveform()` (`src/lightshow_modes.h:1095-1300`) | `leds_16_fx` | `CRGB16[]` | 0–1 | LED compositing | Directly consumes `audio_processed_state.getWaveform()`; requires preserved int16 scaling.
+| LED Frame Init | `led_thread()` (`src/main.cpp`) | `leds_16`, `leds_16_fx`, `leds_16_ui` | `CRGB16[CONFIG.LED_COUNT]` | 0.0–1.0 (Q8.8) | LC renderer, UI layer | Frame seq counters `g_frame_seq_*` ensure producer/consumer sync.
+| Palette synchronisation | `lc::PaletteManager` (`src/lc/runtime.cpp`) | `currentPalette`, `targetPalette` | `CRGBPalette16` | 0–255 per channel | FxEngine, serial menu | Pulls SB palette index each frame; respects `CONFIG.PALETTE_INDEX`.
+| LC effect render | `lc::render_lc_frame()` | `leds[]` (CRGB) | `CRGB[HardwareConfig::NUM_LEDS]` | 0–255 per channel | LC buffer bridge | Applies FxEngine effect selected by `CONFIG.LIGHTSHOW_MODE`.
+| SB buffer bridge | `lc::runtime::copy_to_sb_buffers()` | `leds_16`, `leds_16_prev`, `leds_16_secondary` | `CRGB16[]` | 0.0–1.0 | `led_utilities`, telemetry | Converts CRGB to SQ15x16, mirrors to secondary strip when enabled.
 | Frame compositing | `led_utilities::compose_frame()` (`src/led_utilities.h:240-402`) | `leds_out` (FastLED) | `CRGB[160]` | 0–255 per channel | FastLED controller | Applies: temporal dithering (`dither_table`), incandescent filter (`CONFIG.INCANDESCENT_FILTER`), mirror (`CONFIG.MIRROR_ENABLED`), current limiter (`CONFIG.MAX_CURRENT_MA`).
 | Output | `FastLED.show()` invoked inside LED thread | Physical LEDs | WS2812 data stream | — | Hardware | Must respect `CONFIG.MAX_CURRENT_MA` to avoid brownouts.
 
@@ -73,9 +69,9 @@
 
 | Symbol | Producer | Consumers |
 |--------|----------|-----------|
-| `spectrogram`, `chromagram` | `process_GDFT` | All GDFT-derived light modes, serial diagnostics |
-| `leds_16` | `led_thread` (init) & modes | `led_utilities::compose_frame`, Mabutrace traces |
-| `leds_16_prev`, `leds_16_prev_secondary` | Modes (Bloom, Quantum) | Provide inertia across frames |
+| `spectrogram`, `chromagram` | `process_GDFT` | `lc/audio_bridge`, serial diagnostics |
+| `leds_16` | `lc::runtime::copy_to_sb_buffers` | `led_utilities::compose_frame`, Mabutrace traces |
+| `leds_16_prev`, `leds_16_prev_secondary` | `lc::runtime::copy_to_sb_buffers` | Provide inertia across frames |
 | `ui_mask`, `leds_16_ui` | `led_utilities` & HMI layer | compositing + menu overlays |
 | `hue_lookup[NUM_FREQS][3]` | Constants (`src/constants.h:94`) | Direct conversion of note index -> CRGB16 | Preserve aggregate syntax to avoid FixedPoints corruption.
 
