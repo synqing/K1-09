@@ -10,18 +10,26 @@ PaletteManager::PaletteManager() {
 
 void PaletteManager::init() {
   palettes_.clear();
-  palettes_.reserve(6);
+  names_.clear();
+  brightness_caps_.clear();
 
-  palettes_.push_back(CRGBPalette16(CRGB::Black));                    // solid off
-  palettes_.push_back(CRGBPalette16(CloudColors_p));                  // cool blues
-  palettes_.push_back(CRGBPalette16(OceanColors_p));                  // aquatic teal
-  palettes_.push_back(CRGBPalette16(ForestColors_p));                 // greens
-  palettes_.push_back(CRGBPalette16(LavaColors_p));                   // warm reds
-  palettes_.push_back(CRGBPalette16(PartyColors_p));                  // accent neons
+  const std::size_t total = palette_catalog::count();
+  palettes_.reserve(total);
+  names_.reserve(total);
+  brightness_caps_.reserve(total);
 
-  // Default to the first active palette (skip the all-black entry used for explicit blackout).
-  current_index_ = palettes_.size() > 1 ? 1u : 0u;
-  current_ = palettes_[current_index_];
+  for (std::size_t i = 0; i < total; ++i) {
+    CRGBPalette16 palette;
+    palette_catalog::load_palette(i, palette);
+    palettes_.push_back(palette);
+
+    auto meta = palette_catalog::metadata(i);
+    names_.push_back(meta.name ? meta.name : "");
+    brightness_caps_.push_back(meta.max_brightness ? meta.max_brightness : 255u);
+  }
+
+  current_index_ = palettes_.empty() ? 0u : 0u;
+  current_ = palettes_.empty() ? CRGBPalette16(CRGB::Black) : palettes_[current_index_];
   target_ = current_;
   blend_progress_ = 1.0f;
 }
@@ -55,6 +63,36 @@ const CRGBPalette16& PaletteManager::update(float blend_speed) {
     }
   }
   return current_;
+}
+
+void PaletteManager::next(bool snap) {
+  if (palettes_.empty()) {
+    return;
+  }
+  uint8_t next_idx = static_cast<uint8_t>((current_index_ + 1u) % palettes_.size());
+  set_index(next_idx, snap);
+}
+
+void PaletteManager::prev(bool snap) {
+  if (palettes_.empty()) {
+    return;
+  }
+  uint8_t prev_idx = static_cast<uint8_t>((current_index_ + palettes_.size() - 1u) % palettes_.size());
+  set_index(prev_idx, snap);
+}
+
+const char* PaletteManager::current_name() const {
+  if (names_.empty() || current_index_ >= names_.size()) {
+    return "";
+  }
+  return names_[current_index_];
+}
+
+uint8_t PaletteManager::current_brightness_cap() const {
+  if (brightness_caps_.empty() || current_index_ >= brightness_caps_.size()) {
+    return 255u;
+  }
+  return brightness_caps_[current_index_];
 }
 
 }  // namespace vp

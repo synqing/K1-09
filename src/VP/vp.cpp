@@ -30,10 +30,19 @@ void speed_up()        { vp_renderer::adjust_speed(1.15f); }
 void speed_down()      { vp_renderer::adjust_speed(1.0f/1.15f); }
 void next_mode()       { vp_renderer::next_mode(); }
 void prev_mode()       { vp_renderer::prev_mode(); }
+void next_palette()    { vp_renderer::next_palette(); }
+void prev_palette()    { vp_renderer::prev_palette(); }
+void sensitivity_up()  { vp_renderer::adjust_sensitivity(1.2f); }
+void sensitivity_down(){ vp_renderer::adjust_sensitivity(1.0f/1.2f); }
 
 HMIStatus hmi_status() {
   auto s = vp_renderer::status();
-  return HMIStatus{ (unsigned)s.brightness, s.speed, (unsigned)s.mode };
+  return HMIStatus{ (unsigned)s.brightness,
+                    s.speed,
+                    (unsigned)s.mode,
+                    (unsigned)s.palette,
+                    s.palette_name,
+                    s.sensitivity };
 }
 
 } // namespace vp

@@ -29,6 +29,7 @@ vp::FrameContext g_context{};
 float g_flux_env = 0.0f;
 float g_beat_env = 0.0f;
 uint32_t g_last_debug_ms = 0;
+uint32_t g_last_frame_us = 0;
 bool g_ready = false;
 
 constexpr float kFluxAlpha = 0.28f;
@@ -101,11 +102,15 @@ void prepare_frame_context(const vp_consumer::VPFrame& frame) {
   g_context.epoch = frame.epoch;
   g_context.timestamp_ms = frame.t_ms;
   g_context.time_seconds = static_cast<float>(frame.t_ms) * 0.001f;
-  g_context.brightness_scalar = g_tunables.brightness;
+
+  const uint8_t brightness_cap = g_palettes.current_brightness_cap();
+  const float cap_scalar = static_cast<float>(brightness_cap) / 255.0f;
+  g_context.brightness_scalar = std::min(g_tunables.brightness, cap_scalar);
   g_context.saturation = g_tunables.saturation;
+
   const float blend_speed = 0.012f + 0.01f * g_tunables.speed;
   g_context.palette = &g_palettes.update(blend_speed);
-  g_context.palette_blend = 1.0f;  // Palette manager handles interpolation internally.
+  g_context.palette_blend = 1.0f;
 }
 
 void maybe_print_debug(const vp_consumer::VPFrame& frame, const vp::AudioMetrics& metrics) {
@@ -163,11 +168,18 @@ void maybe_print_debug(const vp_consumer::VPFrame& frame, const vp::AudioMetrics
                 metrics.band_presence,
                 metrics.band_high,
                 use_smooth ? "smooth" : "raw");
-  Serial.printf("[vp] tunables bright=%.2f speed=%.2f beat=%.2f flux=%.2f\n",
-                g_tunables.brightness,
+
+  float frame_ms = g_last_frame_us * 0.001f;
+  float fps = (g_last_frame_us > 0) ? (1000000.0f / static_cast<float>(g_last_frame_us)) : 0.0f;
+  Serial.printf("[vp] tunables bright=%.2f speed=%.2f beat=%.2f flux=%.2f sens=%.2f fps=%.1f frame=%.2fms palette='%s'\n",
+                g_context.brightness_scalar,
                 g_tunables.speed,
                 g_tunables.beat_boost,
-                g_tunables.flux_boost);
+                g_tunables.flux_boost,
+                g_tunables.sensitivity,
+                fps,
+                frame_ms,
+                g_palettes.current_name());
 }
 
 }  // namespace
@@ -178,6 +190,8 @@ void init() {
 
 void render(const vp_consumer::VPFrame& frame) {
   ensure_init();
+
+  const uint32_t frame_start_us = micros();
 
   update_strip_geometry();
 
@@ -193,6 +207,8 @@ void render(const vp_consumer::VPFrame& frame) {
   vp::Effect& effect = g_effects.current();
   effect.render(metrics, g_context, led_frame, g_tunables);
   g_driver.show();
+
+  g_last_frame_us = micros() - frame_start_us;
 
   maybe_print_debug(frame, metrics);
 }
@@ -223,9 +239,35 @@ void prev_mode() {
   g_effects.prev();
 }
 
+void adjust_sensitivity(float factor) {
+  ensure_init();
+  if (factor <= 0.0f) {
+    return;
+  }
+  constexpr float kMinSensitivity = 0.25f;
+  constexpr float kMaxSensitivity = 4.0f;
+  g_tunables.sensitivity = std::clamp(g_tunables.sensitivity * factor, kMinSensitivity, kMaxSensitivity);
+}
+
+void next_palette() {
+  ensure_init();
+  g_palettes.next();
+}
+
+void prev_palette() {
+  ensure_init();
+  g_palettes.prev();
+}
+
 Status status() {
   ensure_init();
-  return Status{g_driver.brightness(), g_tunables.speed, g_effects.index()};
+  return Status{g_driver.brightness(),
+                g_tunables.speed,
+                g_effects.index(),
+                g_palettes.index(),
+                g_palettes.current_name(),
+                g_tunables.sensitivity};
 }
 
 }  // namespace vp_renderer
+

@@ -26,6 +26,7 @@ void LedDriver::init(uint8_t brightness) {
     FastLED.addLeds<WS2812B, kPrimaryDataPin, GRB>(leds_, 0, kStrip1Leds);
     FastLED.addLeds<WS2812B, kSecondaryDataPin, GRB>(leds_ + kStrip1Leds, kStrip2Leds);
     FastLED.setDither(false);
+    FastLED.setMaxRefreshRate(0, true);
     ready_ = true;
   }
   brightness_ = brightness;
@@ -62,4 +63,3 @@ void LedDriver::set_brightness(uint8_t value) {
 }
 
 }  // namespace vp
-

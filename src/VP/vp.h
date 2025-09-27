@@ -17,9 +17,20 @@ void speed_up();
 void speed_down();
 void next_mode();
 void prev_mode();
+void next_palette();
+void prev_palette();
+void sensitivity_up();
+void sensitivity_down();
 
 // For status prints
-struct HMIStatus { unsigned brightness; float speed; unsigned mode; };
+struct HMIStatus {
+  unsigned brightness;
+  float speed;
+  unsigned mode;
+  unsigned palette;
+  const char* palette_name;
+  float sensitivity;
+};
 HMIStatus hmi_status();
 
 } // namespace vp
