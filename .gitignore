@@ -8,7 +8,9 @@
 analysis/
 archive/
 Captains_Handbook/
-docs/
+docs/*
+!docs/specs/
+!docs/specs/**
 Emotiscope/
 libraries/
 scripts/
