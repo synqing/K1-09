@@ -59,37 +59,41 @@ class WaveformEffect final : public Effect {
               const FrameContext& ctx,
               LedFrame& frame,
               const Tunables& tunables) override {
-    const uint16_t radius = static_cast<uint16_t>(ctx.center_left + 1u);
-    if (radius == 0u || !frame.strip1) {
+    const uint16_t length = ctx.strip_length;
+    if (length == 0u || !frame.strip1) {
       frame.clear();
       return;
     }
 
-    ensure_buffer(radius);
+    ensure_buffer(length);
 
     constexpr float kAmpAlpha = 0.12f;
-    constexpr float kMagAlpha = 0.18f;
-    const float raw_peak = std::clamp(metrics.vu_peak, 0.0f, 1.0f);
-    smoothed_peak_ = smoothed_peak_ * (1.0f - kAmpAlpha) + raw_peak * kAmpAlpha;
-    smoothed_magnitude_ = smoothed_magnitude_ * (1.0f - kMagAlpha) + raw_peak * kMagAlpha;
+    const float pos_peak = std::clamp(metrics.waveform_peak, -1.0f, 1.0f);
+    const float neg_peak = std::clamp(metrics.waveform_trough, -1.0f, 0.0f);
+    float signed_amp = (std::fabs(pos_peak) >= std::fabs(neg_peak)) ? pos_peak : neg_peak;
+    signed_amp = std::clamp(signed_amp, -1.0f, 1.0f);
 
-    float abs_amp = std::clamp(smoothed_magnitude_, 0.0f, 1.0f);
+    smoothed_signed_amp_ = smoothed_signed_amp_ * (1.0f - kAmpAlpha) + signed_amp * kAmpAlpha;
+
+    float abs_amp = std::fabs(smoothed_signed_amp_);
     if (abs_amp < 0.05f) {
+      smoothed_signed_amp_ = 0.0f;
       abs_amp = 0.0f;
     }
 
     float fade_scalar = std::clamp(1.0f - 0.10f * abs_amp, 0.0f, 1.0f);
     uint8_t fade8 = static_cast<uint8_t>(fade_scalar * 255.0f);
-    for (auto& px : trail_) {
+    for (auto& px : buffer_) {
       px.nscale8_video(fade8);
     }
 
-    for (int i = static_cast<int>(trail_.size()) - 1; i > 0; --i) {
-      trail_[static_cast<size_t>(i)] = trail_[static_cast<size_t>(i - 1)];
+    for (int i = static_cast<int>(buffer_.size()) - 1; i > 0; --i) {
+      buffer_[static_cast<size_t>(i)] = buffer_[static_cast<size_t>(i - 1)];
     }
-    trail_[0] = CRGB::Black;
+    buffer_[0] = CRGB::Black;
 
-    CRGB colour = compute_colour(metrics, ctx, tunables);
+    const bool palette_active = ctx.palette != nullptr;
+    CRGB colour = compute_colour(metrics, ctx, tunables, palette_active);
     if (!(colour.r | colour.g | colour.b)) {
       colour = last_colour_;
       colour.nscale8_video(230);
@@ -101,59 +105,36 @@ class WaveformEffect final : public Effect {
     uint8_t level = static_cast<uint8_t>(std::clamp(tunables.brightness + overlays, 0.0f, 1.0f) * 255.0f);
     colour.nscale8_video(level);
 
-    float sensitivity = std::max(tunables.sensitivity, 0.1f);
-    float motion = std::clamp(abs_amp * 0.7f * sensitivity, 0.0f, 1.0f);
-    uint16_t offset = static_cast<uint16_t>(std::lround(motion * static_cast<float>(ctx.center_left)));
-    if (offset >= trail_.size()) {
-      offset = static_cast<uint16_t>(trail_.size() - 1u);
-    }
+    const float sensitivity = std::max(tunables.sensitivity, 0.1f);
+    float motion = smoothed_signed_amp_ * (0.7f / sensitivity);
+    motion = std::clamp(motion, -1.0f, 1.0f);
 
-    trail_[offset] = colour;
-    if (offset > 0u) {
-      CRGB halo = colour;
-      halo.nscale8_video(180);
-      trail_[offset - 1u] += halo;
-    }
-    if ((offset + 1u) < trail_.size()) {
-      CRGB halo = colour;
-      halo.nscale8_video(140);
-      trail_[offset + 1u] += halo;
-    }
+    const int center_index = static_cast<int>(ctx.center_left);
+    const float span = static_cast<float>(ctx.center_left + 1u);
+    int pos = static_cast<int>(std::round(center_index + motion * span));
+    pos = std::clamp(pos, 0, static_cast<int>(buffer_.size()) - 1);
 
-    frame.clear();
-    for (uint16_t dist = 0; dist < trail_.size(); ++dist) {
-      const CRGB& sample = trail_[dist];
-      if (!(sample.r | sample.g | sample.b)) {
-        continue;
-      }
-      int32_t left = static_cast<int32_t>(ctx.center_left) - static_cast<int32_t>(dist);
-      int32_t right = static_cast<int32_t>(ctx.center_right) + static_cast<int32_t>(dist);
-      if (left >= 0 && static_cast<uint16_t>(left) < ctx.strip_length) {
-        frame.strip1[left] = sample;
-        if (frame.strip2) {
-          frame.strip2[left] = sample;
-        }
-      }
-      if (right >= 0 && static_cast<uint16_t>(right) < ctx.strip_length) {
-        frame.strip1[right] = sample;
-        if (frame.strip2) {
-          frame.strip2[right] = sample;
-        }
-      }
+    buffer_[static_cast<size_t>(pos)] = colour;
+    int mirror = static_cast<int>(buffer_.size()) - 1 - pos;
+    buffer_[static_cast<size_t>(mirror)] = colour;
+
+    std::copy(buffer_.begin(), buffer_.end(), frame.strip1);
+    if (frame.strip2) {
+      std::copy(buffer_.begin(), buffer_.end(), frame.strip2);
     }
   }
 
  private:
-  void ensure_buffer(uint16_t radius) {
-    const size_t desired = static_cast<size_t>(radius + 1u);
-    if (trail_.size() != desired) {
-      trail_.assign(desired, CRGB::Black);
+  void ensure_buffer(uint16_t length) {
+    if (buffer_.size() != length) {
+      buffer_.assign(length, CRGB::Black);
     }
   }
 
   CRGB compute_colour(const AudioMetrics& metrics,
                       const FrameContext& ctx,
-                      const Tunables& tunables) {
+                      const Tunables& tunables,
+                      bool palette_active) {
     size_t best_index = metrics.chroma.size();
     float best_value = 0.0f;
     for (size_t i = 0; i < metrics.chroma.size(); ++i) {
@@ -164,27 +145,43 @@ class WaveformEffect final : public Effect {
       }
     }
 
+    CRGB colour;
     if (best_index == metrics.chroma.size() || best_value <= 0.01f) {
       uint8_t idx = static_cast<uint8_t>(std::fmod(ctx.time_seconds * 42.0f, 256.0f));
       uint8_t value = static_cast<uint8_t>(std::clamp(tunables.brightness * 200.0f, 16.0f, 220.0f));
-      return sample_palette(ctx.palette, idx, value, tunables.saturation);
+      colour = sample_palette(ctx.palette, idx, value, tunables.saturation);
+    } else {
+      float bright = std::pow(best_value, 1.25f);
+      bright = std::clamp(bright, 0.12f, 1.0f);
+      if (tunables.brightness < 0.25f) {
+        bright *= 0.75f;
+      }
+
+      uint8_t palette_index = static_cast<uint8_t>((best_index * 256u) / metrics.chroma.size());
+      uint8_t value = scale_value(bright, std::max(tunables.brightness, 0.25f));
+      colour = sample_palette(ctx.palette, palette_index, value, tunables.saturation);
     }
 
-    float bright = std::pow(best_value, 1.25f);
-    bright = std::clamp(bright, 0.12f, 1.0f);
-    if (tunables.brightness < 0.25f) {
-      bright *= 0.75f;
+    if (palette_active) {
+      const uint8_t palette_floor = static_cast<uint8_t>(0.20f * 255.0f);
+      uint8_t max_component = std::max({colour.r, colour.g, colour.b});
+      if (max_component < palette_floor) {
+        if (max_component > 0) {
+          float scale = static_cast<float>(palette_floor) / static_cast<float>(max_component);
+          colour.r = static_cast<uint8_t>(std::min(255.0f, colour.r * scale));
+          colour.g = static_cast<uint8_t>(std::min(255.0f, colour.g * scale));
+          colour.b = static_cast<uint8_t>(std::min(255.0f, colour.b * scale));
+        } else {
+          colour = sample_palette(ctx.palette, 0, palette_floor, tunables.saturation);
+        }
+      }
     }
 
-    uint8_t palette_index = static_cast<uint8_t>((best_index * 256u) / metrics.chroma.size());
-    uint8_t value = scale_value(bright, std::max(tunables.brightness, 0.25f));
-    CRGB colour = sample_palette(ctx.palette, palette_index, value, tunables.saturation);
     return colour;
   }
 
-  std::vector<CRGB> trail_{};
-  float smoothed_peak_ = 0.0f;
-  float smoothed_magnitude_ = 0.0f;
+  std::vector<CRGB> buffer_{};
+  float smoothed_signed_amp_ = 0.0f;
   CRGB last_colour_{0, 0, 0};
 };
 
