@@ -1,5 +1,0 @@
-# header                                   cpp
-src/system.h                              src/core/system.cpp
-src/i2s_audio.h                           src/core/i2s_audio.cpp
-src/p2p.h                                 src/core/p2p.cpp
-src/serial_menu.h                         src/core/serial_menu.cpp

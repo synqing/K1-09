@@ -1,3 +1,0 @@
-# Add glob patterns to temporarily ignore files for the aggregate-init scanner.
-# Example:
-# src/legacy/**
