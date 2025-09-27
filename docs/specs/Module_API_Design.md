@@ -52,7 +52,7 @@ This document details public interfaces, module responsibilities, and key data f
 | Symbol | Signature | Description |
 |--------|-----------|-------------|
 | `vp::init` | `void vp::init()` | Initialize VP config (NVS) and hardware renderer. (`src/VP/vp.cpp:9-12`)
-| `vp::tick` | `void vp::tick()` | Acquire `VPFrame` snapshot and dispatch to renderer. (`src/VP/vp.cpp:14-20`)
+| `vp::tick` | `bool vp::tick()` | Acquire `VPFrame` snapshot and dispatch to renderer. Returns `true` when a frame renders. (`src/VP/vp.cpp:14-23`)
 
 ### 2.2 Frame Acquisition
 - `VPFrame` (`src/VP/vp_consumer.h`): contains `AudioFrame af`, `uint32_t epoch`, `uint32_t t_ms`.
@@ -154,7 +154,7 @@ All modes:
 2. If `read_q24_chunk(q24_chunk, chunk_size)` returns true:
    - `audio_pipeline_tick(q24_chunk, millis())`
    - `vp_test_render()` (legacy debug prints using `acquire_spectral_frame`) — optional to disable.
-   - `vp::tick()`.
+  - `vp::tick()` (returns `true` when LEDs updated, `false` when no frame rendered).
 3. `storage::nvs::poll()`.
 
 ### 5.3 Legacy Debug Hook
@@ -193,4 +193,3 @@ Main Loop
 - Introduce new HMI controls via `vp::` proxies and main loop key handling (ensure `[HMI]` echo).
 - Persist new config by extending `VPConfig` and storing via `storage::nvs` (define new NVS keys).
 - Integrate additional debug categories by extending `debug_flags` enum and update `debug_ui` handler.
-

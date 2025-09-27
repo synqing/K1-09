@@ -26,6 +26,8 @@ int32_t read_dc_offset_1s_q24();  // exact 1-second mean
  */
 bool read_q24_chunk(int* out_q24, unsigned int n);
 
+float read_sample_rate_hz();
+
 } // namespace Sph0645
 } // namespace Audio
 } // namespace K1Lightwave

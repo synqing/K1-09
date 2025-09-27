@@ -11,12 +11,13 @@ void init() {
   vp_renderer::init();
 }
 
-void tick() {
+bool tick() {
   vp_consumer::VPFrame f{};
   if (!vp_consumer::acquire(f)) {
-    return;
+    return false;
   }
   vp_renderer::render(f);
+  return true;
 }
 
 } // namespace vp

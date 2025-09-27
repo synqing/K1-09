@@ -128,9 +128,21 @@ bool audio_pipeline_init() {
 }
 
 void audio_pipeline_tick(const int32_t* q24_chunk, uint32_t t_ms) {
+  // Remove per-chunk DC offset once so all downstream consumers see zero-mean audio.
+  int64_t sum = 0;
+  for (uint32_t i = 0; i < chunk_size; ++i) {
+    sum += q24_chunk[i];
+  }
+  const int32_t mean = static_cast<int32_t>(sum / static_cast<int64_t>(chunk_size));
+
+  int32_t centered_q24[chunk_size];
+  for (uint32_t i = 0; i < chunk_size; ++i) {
+    centered_q24[i] = q24_chunk[i] - mean;
+  }
+
   // 1) Waveform snapshot (Q15)
   for (uint32_t i=0;i<chunk_size;++i) {
-    float f = (float)q24_chunk[i] / 8388607.0f;
+    float f = (float)centered_q24[i] / 8388607.0f;
     int32_t q15 = (int32_t)lrintf(f * 32767.0f);
     if (q15 > 32767) {
       q15 = 32767;
@@ -141,11 +153,11 @@ void audio_pipeline_tick(const int32_t* q24_chunk, uint32_t t_ms) {
   }
 
   // 2) Levels (linear)
-  g_staging.vu_peak = levels::peak_q16_from_q24(q24_chunk, chunk_size);
-  g_staging.vu_rms  = levels::rms_q16_from_q24 (q24_chunk, chunk_size);
+  g_staging.vu_peak = levels::peak_q16_from_q24(centered_q24, chunk_size);
+  g_staging.vu_rms  = levels::rms_q16_from_q24 (centered_q24, chunk_size);
 
   // 3) Frequency bins -> raw_spectral (linear)
-  goertzel_backend::compute_bins(q24_chunk, g_staging.raw_spectral);
+  goertzel_backend::compute_bins(centered_q24, g_staging.raw_spectral);
 
   // 4) EMA smoothing (runtime-tunable alpha, saturated, non-negative)
   const uint32_t a = audio_params::get_smoothing_alpha_q16();
@@ -199,7 +211,7 @@ void audio_pipeline_tick(const int32_t* q24_chunk, uint32_t t_ms) {
 #endif
 
   // 8) Tempo lane
-  tempo_lane::tempo_ingest(q24_chunk);
+  tempo_lane::tempo_ingest(centered_q24);
   tempo_lane::tempo_update(g_staging.tempo_bpm,
                            g_staging.beat_phase,
                            g_staging.beat_strength,

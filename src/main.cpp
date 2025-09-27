@@ -10,6 +10,7 @@
 #include "debug/debug_flags.h"
 #include "storage/NVS.h"
 #include "VP/vp.h"
+#include "pipeline_guard.h"
 
 namespace {
 
@@ -95,11 +96,16 @@ void setup() {
   // Visual pipeline
   vp::init();
 
+  pipeline_guard::reset(millis());
+
   print_debug_status();
   print_debug_help();
 }
 
 void loop() {
+  const uint32_t loop_start_ms = millis();
+  pipeline_guard::loop_begin(loop_start_ms);
+
   // HMI / debug key handling
   while (Serial.available() > 0) {
     char c = static_cast<char>(Serial.read());
@@ -107,9 +113,13 @@ void loop() {
   }
 
   // Producer: pull exactly one full 128-sample chunk (Q24)
-  if (K1Lightwave::Audio::Sph0645::read_q24_chunk(q24_chunk, chunk_size)) {
+  bool chunk_ready = K1Lightwave::Audio::Sph0645::read_q24_chunk(q24_chunk, chunk_size);
+  const uint32_t audio_event_ms = millis();
+  pipeline_guard::notify_audio_chunk(chunk_ready, audio_event_ms);
+
+  if (chunk_ready) {
     // Publish one AudioFrame (producer)
-    audio_pipeline_tick(q24_chunk, millis());
+    audio_pipeline_tick(q24_chunk, audio_event_ms);
 
     // Optional: AP-side telemetry
     vp_test_render();
@@ -118,10 +128,15 @@ void loop() {
   // *** IMPORTANT CHANGE ***
   // Consumer: always tick VP every loop, even if mic read missed this pass.
   // VP will internally acquire the latest published AudioFrame (if any).
-  vp::tick();
+  const bool vp_rendered = vp::tick();
+  const uint32_t vp_tick_ms = millis();
+  pipeline_guard::notify_vp_tick(vp_rendered, vp_tick_ms);
 
   // Non-RT upkeep
   storage::nvs::poll();
+
+  const uint32_t loop_end_ms = millis();
+  pipeline_guard::loop_end(loop_end_ms);
 
   // (Optional peek for bring-up; keep disabled for tidy main)
   // const AudioFrame* f = acquire_spectral_frame();
@@ -140,6 +155,18 @@ void print_debug_status() {
                 debug_flags::enabled(debug_flags::kGroupDCAndDrift)  ? "ON " : "off");
   Serial.printf("[debug] VP: 4:%s\n",
                 debug_flags::enabled(debug_flags::kGroupVP) ? "ON " : "off");
+  if (debug_flags::enabled(debug_flags::kGroupVP)) {
+    const auto stats = pipeline_guard::snapshot();
+    Serial.printf(
+        "[guard] loops=%lu audio=%lu stalls=%lu vp=%lu renders=%lu lastAudio=%lums lastRender=%lums\n",
+        static_cast<unsigned long>(stats.loop_count),
+        static_cast<unsigned long>(stats.audio_chunk_count),
+        static_cast<unsigned long>(stats.audio_chunk_stalls),
+        static_cast<unsigned long>(stats.vp_tick_count),
+        static_cast<unsigned long>(stats.vp_render_count),
+        static_cast<unsigned long>(millis() - stats.last_audio_ms),
+        static_cast<unsigned long>(millis() - stats.last_vp_render_ms));
+  }
 }
 
 void print_debug_help() {
@@ -307,4 +334,3 @@ void handle_debug_key(char c) {
 }
 
 } // namespace
-

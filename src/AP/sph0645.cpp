@@ -4,15 +4,25 @@
 // + NVS persistence of calibration + optional CSV snapshot (debug_mode)
 
 #include "sph0645.h"
+#include "audio_config.h"
+#include "debug/performance_trace.h"
+#include <freertos/task.h>
 #include <Arduino.h>
 #include "driver/i2s.h"
 #include <math.h>
 #include <Preferences.h>   // NVS persistence for per-unit calibration
+#include "esp_idf_version.h"
 #include "debug/debug_flags.h"
 
 namespace K1Lightwave {
 namespace Audio {
 namespace Sph0645 {
+
+namespace {
+float g_i2s_rate_hz = 0.0f;
+AudioFrameTracer g_audio_tracer;
+TaskHandle_t g_trace_task = nullptr;
+}
 
 // -------------------- External flags (used elsewhere in your system) --------------------
 extern bool debug_mode;  // If true, we emit an extra CSV line each second
@@ -142,16 +152,16 @@ static inline double pctFS_from_q24(double q24) {
 void setup() {
   Serial.begin(115200);
 
-  // I2S configuration (standard I2S, WS == SAMPLE RATE)
+  // Legacy I2S configuration (Arduino core 2.0.9 compatible)
   i2s_config_t i2s_config = {};
   i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX);
-  i2s_config.sample_rate = 16000;                         // WS == sample rate
+  i2s_config.sample_rate = audio_sample_rate;             // WS == sample rate
   i2s_config.bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT; // 32-bit slot; 24-bit payload
-  i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;  // SEL low -> left slot
-  i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S; // modern flag
+  i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;  // left slot
+  i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
   i2s_config.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
   i2s_config.dma_buf_count = 8;
-  i2s_config.dma_buf_len   = 128;
+  i2s_config.dma_buf_len   = chunk_size * 2;  // larger ring per legacy baseline
   i2s_config.use_apll = false;
 #if ESP_IDF_VERSION_MAJOR >= 5
   i2s_config.tx_desc_auto_clear = false;
@@ -160,7 +170,7 @@ void setup() {
 
   i2s_pin_config_t pin_config = {};
   pin_config.bck_io_num   = 7;     // BCLK
-  pin_config.ws_io_num    = 13;    // LRCLK (== sample rate)
+  pin_config.ws_io_num    = 13;    // LRCLK
   pin_config.data_out_num = I2S_PIN_NO_CHANGE;
   pin_config.data_in_num  = 8;     // SD
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -171,6 +181,32 @@ void setup() {
   if (err != ESP_OK) { Serial.printf("I2S install err=%d\n", err); while (true) { delay(10); } }
   err = i2s_set_pin(I2S_PORT, &pin_config);
   if (err != ESP_OK) { Serial.printf("I2S set_pin err=%d\n", err); while (true) { delay(10); } }
+  i2s_zero_dma_buffer(I2S_PORT);
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+  uint32_t actual_rate = 0;
+  i2s_bits_per_sample_t actual_bits = I2S_BITS_PER_SAMPLE_32BIT;
+  i2s_channel_t actual_channels = I2S_CHANNEL_MONO;
+  if (i2s_get_clk(I2S_PORT, &actual_rate, &actual_bits, &actual_channels) == ESP_OK) {
+    Serial.printf("I2S clk => rate=%uHz bits=%u channels=%u\n",
+                  static_cast<unsigned>(actual_rate),
+                  static_cast<unsigned>(actual_bits),
+                  static_cast<unsigned>(actual_channels));
+    g_i2s_rate_hz = static_cast<float>(actual_rate);
+  }
+#else
+  const float actual_rate = i2s_get_clk(I2S_PORT);
+  Serial.printf("I2S clk => rate=%.2fHz (legacy API)\n", static_cast<double>(actual_rate));
+  g_i2s_rate_hz = actual_rate;
+#endif
+
+  init_performance_trace(TRACE_CAT_AUDIO | TRACE_CAT_I2S | TRACE_CAT_PERF |
+                         TRACE_CAT_ERROR | TRACE_CAT_CRITICAL);
+  if (!g_trace_task) {
+    xTaskCreatePinnedToCore(trace_consumer_task, "trace_consumer", 2048, nullptr, 1,
+                            &g_trace_task, 1);
+    export_trace_buffer_serial();
+  }
 
   // NVS init (per-unit calibration persistence)
   nvs_ready = prefs.begin(kNvsNS, false); // RW
@@ -193,7 +229,7 @@ void loop() {
   int32_t sample32 = 0;
   size_t bytes_read = 0;
 
-  // Blocking read of one 32-bit I2S word
+  // Blocking read of one 32-bit I2S word (legacy driver)
   esp_err_t err = i2s_read(I2S_PORT, &sample32, sizeof(sample32), &bytes_read, portMAX_DELAY);
   if (err != ESP_OK || bytes_read != sizeof(sample32)) {
     Serial.printf("Read error: %d (%u bytes)\n", err, (unsigned)bytes_read);
@@ -357,18 +393,26 @@ bool read_q24_chunk(int32_t* out_q24, size_t n) {
     return false;
   }
 
+  g_audio_tracer.start_i2s();
+  const uint32_t t0 = micros();
   const size_t bytes_needed = n * sizeof(int32_t);
   size_t bytes_read = 0;
-  esp_err_t err = i2s_read(I2S_PORT, out_q24, bytes_needed, &bytes_read, portMAX_DELAY);
+  int32_t buf[chunk_size];
+  // Legacy driver: non-blocking with 10ms cap to avoid long stalls
+  esp_err_t err = i2s_read(I2S_PORT, buf, bytes_needed, &bytes_read, pdMS_TO_TICKS(10));
+  const uint32_t elapsed_us = micros() - t0;
   if (err != ESP_OK || bytes_read != bytes_needed) {
+    TRACE_ERROR(ERROR_I2S_TIMEOUT,
+                ((err & 0xFFFF) << 16) | static_cast<uint32_t>(bytes_read & 0xFFFF));
     return false;
   }
+  for (size_t i = 0; i < n; ++i) {
+    out_q24[i] = (buf[i] >> 8);
+  }
+  g_audio_tracer.end_i2s(elapsed_us, static_cast<uint32_t>(bytes_read));
 
   for (size_t i = 0; i < n; ++i) {
-    int32_t raw32 = out_q24[i];
-    int32_t s_q24 = raw32 >> 8;
-    out_q24[i] = s_q24;
-    process_sample_q24(s_q24);
+    process_sample_q24(out_q24[i]);
   }
 
   return true;
@@ -388,3 +432,7 @@ DC(1s) is stable and forms the basis for drift, %FS, and quiet-epoch checks.
 Using both gives responsiveness and noise immunity without touching the stream.
 
 */
+
+float K1Lightwave::Audio::Sph0645::read_sample_rate_hz() {
+  return g_i2s_rate_hz;
+}

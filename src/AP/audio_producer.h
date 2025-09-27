@@ -3,8 +3,16 @@
 #include "audio_bus.h"
 
 /* ===================== Audio Producer (single-core) =====================
-   Call audio_pipeline_init() once at boot.
-   Call audio_pipeline_tick() exactly once per full Layer-1 chunk.
+   Loop contract (see src/pipeline_guard.h for enforcement details):
+     - Call audio_pipeline_init() once at boot before the pipeline guard is
+       reset.
+     - On each firmware loop, attempt to read one Q24 chunk from the mic.
+     - When a chunk is returned, call audio_pipeline_tick() exactly once with
+       the chunk data and the acquisition timestamp (ms since boot).
+     - When the read call reports "not ready", continue the firmware loop and
+       allow the pipeline guard to record the stall so the VP keeps ticking.
+   The guard keeps VP scheduling decoupled from mic readiness and surfaces
+   stalled chunks / dropped VP frames via debug flag group 4.
 ============================================================================ */
 
 bool audio_pipeline_init();  // builds window, inits backends/states
@@ -38,4 +46,3 @@ Flux: max(0, Σ(max(0, raw[k] - raw_prev[k]))) (store raw_prev[] statically).
 
 Publish: memcpy(staging → public_frame); sfa_epoch++.
 */
-

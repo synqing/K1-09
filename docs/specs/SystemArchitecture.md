@@ -73,10 +73,10 @@ All components execute on Core 0 under the Arduino framework. The main loop owns
 1. `setup()` (main): initialize serial → L1 mic → `audio_pipeline_init()` → `vp::init()` → `debug_ui::init()`.
 2. `loop()` (main):
    - process incoming serial char (HMI keys handled inline, debug keys forwarded to `debug_ui::handle_key`).
-   - if `Sph0645::read_q24_chunk()` succeeds:
-     1. call `audio_pipeline_tick(q24_chunk, millis())`.
-     2. call `vp::tick()` (internally snapshots and renders).
-   - call `storage::nvs::poll()` for debounced writes.
+   - attempt to read one chunk via `Sph0645::read_q24_chunk()`; when it succeeds call `audio_pipeline_tick(q24_chunk, t_ms)` once with the acquisition timestamp.
+   - inform the pipeline guard about the chunk result so it can track stalls and enforce scheduling diagnostics.
+   - call `vp::tick()` on every loop iteration; the function returns `true` when a new frame rendered and `false` if it skipped because no fresh audio was available.
+   - call `storage::nvs::poll()` for debounced writes and allow the guard to emit periodic telemetry when debug flag group 4 is enabled.
 3. Debug UI timer prints (timing, tempo, energy, silence) based on toggles.
 
 ### 3.4 Timing & Performance
@@ -95,7 +95,7 @@ All components execute on Core 0 under the Arduino framework. The main loop owns
 - VP state: brightness, speed, mode, band envelopes, flux/beat envelopes, sparkle pool (`src/VP/vp_renderer.cpp`).
 
 ## 5. Error Handling & Logging
-- Mic read failure (returns false) simply skips AP/VP ticks.
+- Mic read failure (returns false) increments pipeline guard stall counters; VP ticks continue each loop to stay decoupled from mic readiness.
 - VP acquisition failures return early without affecting LEDs.
 - Debug logs gated by flag groups to prevent overwhelming serial bandwidth.
 - Flux diagnostics optional (only when debug group 3 enabled).
@@ -110,4 +110,3 @@ All components execute on Core 0 under the Arduino framework. The main loop owns
 - VP profiling macro (planned) to monitor `vp::tick()` cost.
 - PixelSpork interoperability (legacy code references preserved under `archive/legacy_src/`).
 - Additional HMI control surfaces (encoders, network) can reuse the `vp::` proxy functions.
-

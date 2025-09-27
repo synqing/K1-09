@@ -8,7 +8,8 @@
 namespace vp {
 
 void init();
-void tick();
+// Returns true when a frame is rendered, false if no new audio was available.
+bool tick();
 
 // HMI proxies
 void brightness_up();
