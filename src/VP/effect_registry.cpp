@@ -102,7 +102,7 @@ class WaveformEffect final : public Effect {
     colour.nscale8_video(level);
 
     float sensitivity = std::max(tunables.sensitivity, 0.1f);
-    float motion = std::clamp(abs_amp * (0.7f / sensitivity), 0.0f, 1.0f);
+    float motion = std::clamp(abs_amp * 0.7f * sensitivity, 0.0f, 1.0f);
     uint16_t offset = static_cast<uint16_t>(std::lround(motion * static_cast<float>(ctx.center_left)));
     if (offset >= trail_.size()) {
       offset = static_cast<uint16_t>(trail_.size() - 1u);
@@ -209,7 +209,7 @@ inline float map_band_energy(const AudioMetrics& metrics, float raw) {
 
 inline float overall_intensity(const AudioMetrics& metrics, const Tunables& tunables) {
   float mix = metrics.vu_peak * 1.8f + metrics.flux * 0.9f + metrics.flux_smoothed * 0.6f + tunables.flux_boost * 0.8f;
-  return clamp01(mix);
+  return clamp01(mix * tunables.sensitivity);
 }
 
 class BandSegmentsEffect final : public Effect {
