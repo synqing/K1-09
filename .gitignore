@@ -1,11 +1,29 @@
-Reference.docs/
+# Local caches, IDE, build, OS files
+.cache/
 .pio/
+.vscode/
 .DS_Store
 
-# analysis outputs
+# Non-build trees to exclude from online repo
+analysis/
+archive/
+Captains_Handbook/
+docs/
+Emotiscope/
+libraries/
+scripts/
+test/
+tests/
+tools/
+Reference.docs/
+
+# Top-level files not required to build firmware
+Dockerfile.dev
+agent_runner.sh
+compile_commands.json
+README.md
+
+# Legacy analysis outputs (if analysis/ retained locally)
 analysis/deps_report.json
 analysis/deps_mermaid.md
 analysis/deps_graph.dot
-
-# build system databases
-compile_commands.json
