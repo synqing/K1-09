@@ -627,15 +627,8 @@ void tempo_update(q16& out_tempo_bpm_q16,
 
 #if AUDIO_DIAG_TEMPO
   if (debug_flags::enabled(debug_flags::kGroupTempoFlux)) {
-    Serial.printf("[tempo] bpm=%.1f strength=%.2f conf=%.2f silence=%.2f ready=%d beat=%u\n",
-                  bpm,
-                  strength,
-                  g_state.confidence,
-                  g_state.silence_level,
-                  g_state.novelty_full ? 1 : 0,
-                  (unsigned)out_beat_flag);
-
-    if ((g_state.diag_counter++ % kTempoDiagPeriod) == 0u) {
+    const uint32_t counter = ++g_state.diag_counter;
+    if ((counter % kTempoDiagPeriod) == 0u) {
       Serial.printf("[tempo] bpm=%.1f strength=%.2f conf=%.2f silence=%.2f ready=%d beat=%u\n",
                     bpm,
                     strength,
@@ -643,94 +636,66 @@ void tempo_update(q16& out_tempo_bpm_q16,
                     g_state.silence_level,
                     g_state.novelty_full ? 1 : 0,
                     (unsigned)out_beat_flag);
-      Serial.printf("[acf] mix:{");
-      for (int i = 0; i < 4; ++i) {
-        if (peaks_mix[i].lag < 0) continue;
-        float peak_period = (float)(kMinPeriodFrames + peaks_mix[i].lag);
-        float peak_bpm = bpm_from_period(peak_period);
-        Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
-                      kMinPeriodFrames + peaks_mix[i].lag,
-                      peak_bpm,
-                      peaks_mix[i].height,
-                      (i == 3) ? "" : " ");
+
+      const bool emit_detail = ((counter / kTempoDiagPeriod) % 4u) == 0u;
+      if (emit_detail) {
+        Serial.printf("[cand] ");
+        for (int i = 0; i < kLaneCount; ++i) {
+          const LaneCandidate& cand = lanes[i];
+          Serial.printf("%s s=%.3f pL=%.2f pHM=%.2f%s",
+                        cand.name,
+                        cand.score,
+                        cand.phase_low,
+                        cand.phase_hm,
+                        (i == kLaneCount - 1) ? "" : " | ");
+        }
+        Serial.printf(" | pick=%s\n", lanes[chosen_lane].name);
+
+        Serial.printf("[acf] mix:{");
+        for (int i = 0; i < 4; ++i) {
+          if (peaks_mix[i].lag < 0) continue;
+          float peak_period = (float)(kMinPeriodFrames + peaks_mix[i].lag);
+          float peak_bpm = bpm_from_period(peak_period);
+          Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
+                        kMinPeriodFrames + peaks_mix[i].lag,
+                        peak_bpm,
+                        peaks_mix[i].height,
+                        (i == 3) ? "" : " ");
+        }
+        Serial.printf("} hm:{");
+        for (int i = 0; i < 2; ++i) {
+          if (peaks_hm[i].lag < 0) continue;
+          float peak_period = (float)(kMinPeriodFrames + peaks_hm[i].lag);
+          float peak_bpm = bpm_from_period(peak_period);
+          Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
+                        kMinPeriodFrames + peaks_hm[i].lag,
+                        peak_bpm,
+                        peaks_hm[i].height,
+                        (i == 1) ? "" : " ");
+        }
+        Serial.println("}");
+
+        uint32_t window = (uint32_t)kEnergyEvalFrames;
+        uint32_t avail = available_frames();
+        if (window > avail) window = avail;
+        if (window > 0) {
+          float sum = 0.0f;
+          float peak_flux = 0.0f;
+          int buckets[6] = {0};
+          for (uint32_t i = 0; i < window; ++i) {
+            float v = get_recent(g_state.novelty_low_hist, i);
+            sum += v;
+            if (v > peak_flux) peak_flux = v;
+            int bucket = (int)(v / 0.25f);
+            if (bucket < 0) bucket = 0;
+            if (bucket > 5) bucket = 5;
+            buckets[bucket] += 1;
+          }
+          Serial.printf("[flux] avg=%.3f peak=%.3f samples=%u buckets:[0-0.25]=%d [0.25-0.5]=%d [0.5-0.75]=%d [0.75-1.0]=%d [1.0-1.25]=%d [>1.25]=%d\n",
+                        sum / (float)window, peak_flux, window,
+                        buckets[0], buckets[1], buckets[2], buckets[3], buckets[4], buckets[5]);
+        }
       }
-      Serial.printf("} hm:{");
-      for (int i = 0; i < 2; ++i) {
-        if (peaks_hm[i].lag < 0) continue;
-        float peak_period = (float)(kMinPeriodFrames + peaks_hm[i].lag);
-        float peak_bpm = bpm_from_period(peak_period);
-        Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
-                      kMinPeriodFrames + peaks_hm[i].lag,
-                      peak_bpm,
-                      peaks_hm[i].height,
-                      (i == 1) ? "" : " ");
-      }
-      Serial.println("}");
-    }
-
-    Serial.printf("[cand] ");
-    for (int i = 0; i < kLaneCount; ++i) {
-      const LaneCandidate& cand = lanes[i];
-      Serial.printf("%s s=%.3f pL=%.2f pHM=%.2f%s",
-                    cand.name,
-                    cand.score,
-                    cand.phase_low,
-                    cand.phase_hm,
-                    (i == kLaneCount - 1) ? "" : " | ");
-    }
-    Serial.printf(" | pick=%s\n", lanes[chosen_lane].name);
-    Serial.printf("[tempo] bpm=%.1f strength=%.2f conf=%.2f silence=%.2f ready=%d beat=%u\n",
-                  bpm,
-                  strength,
-                  g_state.confidence,
-                  g_state.silence_level,
-                  g_state.novelty_full ? 1 : 0,
-                  (unsigned)out_beat_flag);
-
-    Serial.printf("[acf] mix:{");
-    for (int i = 0; i < 4; ++i) {
-      if (peaks_mix[i].lag < 0) continue;
-      float peak_period = (float)(kMinPeriodFrames + peaks_mix[i].lag);
-      float peak_bpm = bpm_from_period(peak_period);
-      Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
-                    kMinPeriodFrames + peaks_mix[i].lag,
-                    peak_bpm,
-                    peaks_mix[i].height,
-                    (i == 3) ? "" : " ");
-    }
-    Serial.printf("} hm:{");
-    for (int i = 0; i < 2; ++i) {
-      if (peaks_hm[i].lag < 0) continue;
-      float peak_period = (float)(kMinPeriodFrames + peaks_hm[i].lag);
-      float peak_bpm = bpm_from_period(peak_period);
-      Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
-                    kMinPeriodFrames + peaks_hm[i].lag,
-                    peak_bpm,
-                    peaks_hm[i].height,
-                    (i == 1) ? "" : " ");
-    }
-    Serial.println("}");
-
-
-    uint32_t window = (uint32_t)kEnergyEvalFrames;
-    uint32_t avail = available_frames();
-    if (window > avail) window = avail;
-    if (window > 0) {
-      float sum = 0.0f;
-      float peak_flux = 0.0f;
-      int buckets[6] = {0};
-      for (uint32_t i = 0; i < window; ++i) {
-        float v = get_recent(g_state.novelty_low_hist, i);
-        sum += v;
-        if (v > peak_flux) peak_flux = v;
-        int bucket = (int)(v / 0.25f);
-        if (bucket < 0) bucket = 0;
-        if (bucket > 5) bucket = 5;
-        buckets[bucket] += 1;
-      }
-      Serial.printf("[flux] avg=%.3f peak=%.3f samples=%u buckets:[0-0.25]=%d [0.25-0.5]=%d [0.5-0.75]=%d [0.75-1.0]=%d [1.0-1.25]=%d [>1.25]=%d\n",
-                    sum / (float)window, peak_flux, window,
-                    buckets[0], buckets[1], buckets[2], buckets[3], buckets[4], buckets[5]);
     }
   }
 #endif

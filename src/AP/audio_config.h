@@ -26,7 +26,7 @@
 #define AUDIO_DIAG_TEMPO_TOPK 4
 #endif
 #ifndef AUDIO_DIAG_TEMPO_PERIOD
-#define AUDIO_DIAG_TEMPO_PERIOD 32u      // tempo dump cadence in AP ticks
+#define AUDIO_DIAG_TEMPO_PERIOD 160u     // tempo dump cadence in AP ticks (~1.3s @125Hz)
 #endif
 
 #ifndef AUDIO_DIAG_FLUX
