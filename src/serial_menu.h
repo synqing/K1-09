@@ -12,6 +12,7 @@ extern void reboot();                  // system.h
 #include "debug/performance_monitor.h"
 #endif
 #include "debug/debug_manager.h"
+#include "globals.h"
 
 // Benchmark state variables (defined in main .ino file)
 extern bool benchmark_running;

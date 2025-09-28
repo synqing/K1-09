@@ -3,6 +3,7 @@
 ----------------------------------------*/
 
 #include <WiFi.h>  // Include WiFi library for ESP32
+#include "globals.h"
 
 // Fully documenting the P2P functions is a TODO for now.
 // Sorry!
