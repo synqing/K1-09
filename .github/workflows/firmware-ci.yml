@@ -36,11 +36,15 @@ jobs:
       - name: Dependency report (JSON + Mermaid + DOT)
         run: ./agent_runner.sh python3 tools/deps_stub_report.py src include lib
 
+      - name: Export pipeline map
+        run: ./agent_runner.sh python3 scripts/export_pipeline_map.py
+
       - name: Check analysis artifacts
         run: |
           test -s analysis/deps_report.json
           test -s analysis/deps_mermaid.md
           test -s analysis/deps_graph.dot
+          test -s analysis/pipeline_map.json
           ls -lh analysis/
 
       - name: Aggregate-init scanner (STRICT)
