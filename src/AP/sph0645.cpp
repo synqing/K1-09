@@ -6,9 +6,16 @@
 #include "sph0645.h"
 #include "audio_config.h"
 #include "debug/performance_trace.h"
+#include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 #include <Arduino.h>
+#if ESP_IDF_VERSION_MAJOR >= 5
+#include "driver/i2s_std.h"
+#else
 #include "driver/i2s.h"
+#endif
+#include "driver/gpio.h"
 #include <math.h>
 #include <Preferences.h>   // NVS persistence for per-unit calibration
 #include "esp_idf_version.h"
@@ -22,6 +29,17 @@ namespace {
 float g_i2s_rate_hz = 0.0f;
 AudioFrameTracer g_audio_tracer;
 TaskHandle_t g_trace_task = nullptr;
+
+// Latest-only queue item
+struct CaptureChunk {
+  uint32_t enqueued_us;
+  uint16_t flags;
+  uint16_t _pad;
+  int32_t  samples[chunk_size];
+};
+
+static QueueHandle_t g_capture_queue = nullptr;  // depth=1 latest-only
+static TaskHandle_t  g_capture_task  = nullptr;
 }
 
 // -------------------- External flags (used elsewhere in your system) --------------------
@@ -39,6 +57,10 @@ static constexpr const char* kColorReset = "\x1b[0m";
 
 // -------------------- I2S port selection --------------------
 static const i2s_port_t I2S_PORT = I2S_NUM_0;
+#if ESP_IDF_VERSION_MAJOR >= 5
+static i2s_chan_handle_t g_i2s_rx_channel = nullptr;
+static int32_t g_dma_buffer[chunk_size];
+#endif
 
 // -------------------- DC estimators (preserve DC in data path) --------------------
 static constexpr size_t kDCWindow = 1024;           // power-of-two moving-average window
@@ -150,8 +172,57 @@ static inline double pctFS_from_q24(double q24) {
 
 // -------------------- Setup --------------------
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
 
+#if ESP_IDF_VERSION_MAJOR >= 5
+  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_PORT, I2S_ROLE_MASTER);
+  chan_cfg.auto_clear = true;
+  chan_cfg.dma_desc_num = 2;             // <=16ms reservoir
+  chan_cfg.dma_frame_num = chunk_size;
+
+  esp_err_t err = i2s_new_channel(&chan_cfg, nullptr, &g_i2s_rx_channel);
+  if (err != ESP_OK || !g_i2s_rx_channel) {
+    Serial.printf("i2s_new_channel err=%d\n", err);
+    while (true) { delay(10); }
+  }
+
+  i2s_std_config_t std_cfg = {};
+  std_cfg.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(audio_sample_rate);
+  std_cfg.slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO);
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
+
+  std_cfg.gpio_cfg = {
+      .mclk = I2S_GPIO_UNUSED,
+      .bclk = static_cast<gpio_num_t>(7),
+      .ws   = static_cast<gpio_num_t>(13),
+      .dout = I2S_GPIO_UNUSED,
+      .din  = static_cast<gpio_num_t>(8),
+      .invert_flags = {
+          .mclk_inv = false,
+          .bclk_inv = false,
+          .ws_inv   = false,
+      },
+  };
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
+  std_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT;
+  std_cfg.slot_cfg.ws_width = I2S_SLOT_BIT_WIDTH_32BIT;
+
+  err = i2s_channel_init_std_mode(g_i2s_rx_channel, &std_cfg);
+  if (err != ESP_OK) {
+    Serial.printf("i2s_channel_init_std_mode err=%d\n", err);
+    while (true) { delay(10); }
+  }
+
+  err = i2s_channel_enable(g_i2s_rx_channel);
+  if (err != ESP_OK) {
+    Serial.printf("i2s_channel_enable err=%d\n", err);
+    while (true) { delay(10); }
+  }
+
+  g_i2s_rate_hz = static_cast<float>(audio_sample_rate);
+  Serial.printf("I2S clk => rate=%uHz (std)\n", static_cast<unsigned>(audio_sample_rate));
+
+#else
   // Legacy I2S configuration (Arduino core 2.0.9 compatible)
   i2s_config_t i2s_config = {};
   i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX);
@@ -184,6 +255,10 @@ void setup() {
   i2s_zero_dma_buffer(I2S_PORT);
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+  const float actual_rate = i2s_get_clk(I2S_PORT);
+  Serial.printf("I2S clk => rate=%.2fHz (std)\n", static_cast<double>(actual_rate));
+  g_i2s_rate_hz = actual_rate;
+#else
   uint32_t actual_rate = 0;
   i2s_bits_per_sample_t actual_bits = I2S_BITS_PER_SAMPLE_32BIT;
   i2s_channel_t actual_channels = I2S_CHANNEL_MONO;
@@ -194,11 +269,70 @@ void setup() {
                   static_cast<unsigned>(actual_channels));
     g_i2s_rate_hz = static_cast<float>(actual_rate);
   }
-#else
-  const float actual_rate = i2s_get_clk(I2S_PORT);
-  Serial.printf("I2S clk => rate=%.2fHz (legacy API)\n", static_cast<double>(actual_rate));
-  g_i2s_rate_hz = actual_rate;
 #endif
+
+#endif  // ESP_IDF_VERSION_MAJOR >= 5
+
+  // Latest-only capture queue (depth = 1)
+  if (!g_capture_queue) {
+    g_capture_queue = xQueueCreate(1, sizeof(CaptureChunk));
+    if (!g_capture_queue) {
+      Serial.println("[sph0645] FATAL: capture queue allocation failed");
+      while (true) { delay(10); }
+    }
+  }
+
+  // High-priority capture task on same core as Arduino loop (core=1)
+  if (!g_capture_task) {
+    const BaseType_t ok = xTaskCreatePinnedToCore(
+        [](void*) {
+          const size_t bytes_per_chunk = chunk_size * sizeof(int32_t);
+          for (;;) {
+            size_t bytes_read = 0;
+            g_audio_tracer.start_i2s();
+            const uint32_t t0 = micros();
+#if ESP_IDF_VERSION_MAJOR >= 5
+            const esp_err_t err = i2s_channel_read(g_i2s_rx_channel,
+                                                   g_dma_buffer,
+                                                   bytes_per_chunk,
+                                                   &bytes_read,
+                                                   portMAX_DELAY);
+#else
+            const esp_err_t err = i2s_read(I2S_PORT,
+                                           g_dma_buffer,
+                                           bytes_per_chunk,
+                                           &bytes_read,
+                                           portMAX_DELAY);
+#endif
+            const uint32_t elapsed_us = micros() - t0;
+            g_audio_tracer.end_i2s(elapsed_us, static_cast<uint32_t>(bytes_read));
+            if (err != ESP_OK || bytes_read != bytes_per_chunk) {
+              TRACE_ERROR(ERROR_I2S_TIMEOUT,
+                          ((err & 0xFFFF) << 16) | static_cast<uint32_t>(bytes_read & 0xFFFF));
+              continue;
+            }
+
+            // Latest-only publish (overwrite slot)
+            CaptureChunk chunk{};
+            chunk.enqueued_us = micros();
+            chunk.flags = 0;
+            for (size_t i = 0; i < chunk_size; ++i) {
+              chunk.samples[i] = g_dma_buffer[i] >> 8;
+            }
+            (void)xQueueOverwrite(g_capture_queue, &chunk);
+          }
+        },
+        "sph0645_capture",
+        4096,
+        nullptr,
+        tskIDLE_PRIORITY + 18,
+        &g_capture_task,
+        1);
+    if (ok != pdPASS) {
+      Serial.println("[sph0645] FATAL: capture task creation failed");
+      while (true) { delay(100); }
+    }
+  }
 
   init_performance_trace(TRACE_CAT_AUDIO | TRACE_CAT_I2S | TRACE_CAT_PERF |
                          TRACE_CAT_ERROR | TRACE_CAT_CRITICAL);
@@ -226,20 +360,7 @@ void setup() {
 
 // -------------------- Loop --------------------
 void loop() {
-  int32_t sample32 = 0;
-  size_t bytes_read = 0;
-
-  // Blocking read of one 32-bit I2S word (legacy driver)
-  esp_err_t err = i2s_read(I2S_PORT, &sample32, sizeof(sample32), &bytes_read, portMAX_DELAY);
-  if (err != ESP_OK || bytes_read != sizeof(sample32)) {
-    Serial.printf("Read error: %d (%u bytes)\n", err, (unsigned)bytes_read);
-    return;
-  }
-
-  // Unpack 24-in-32 (arith shift) => signed Q24 counts
-  int32_t s_q24 = sample32 >> 8;
-
-  process_sample_q24(s_q24);
+  // no-op; capture handled by dedicated task
 }
 
 // -------------------- Shared once-per-second summary --------------------
@@ -334,19 +455,19 @@ static void maybe_emit_summary() {
   const char* rebase_note_clean = (*rebase_note == ' ') ? (rebase_note + 1) : rebase_note;
 
   if (debug_flags::enabled(debug_flags::kGroupAPInput)) {
-    Serial.printf("%sAP Input%s : %sMin=%d | Max=%d | QstepOK=%.1f%% | Clip=%.3f%%%s\n",
+    Serial.printf("%sAP Input%s : %sMin=%ld | Max=%ld | QstepOK=%.1f%% | Clip=%.3f%%%s\n",
                   kColorInput, kColorWhite, kColorWhite,
-                  min_sample, max_sample, qstep_ok, clip_rate_pct, kColorReset);
+                  (long)min_sample, (long)max_sample, qstep_ok, clip_rate_pct, kColorReset);
   }
 
   if (debug_flags::enabled(debug_flags::kGroupDCAndDrift)) {
-    Serial.printf("%sDC Stats%s : %sWin=%u -> %d | 1s=%d | %%FS=%.2f%s\n",
+    Serial.printf("%sDC Stats%s : %sWin=%u -> %ld | 1s=%ld | %%FS=%.2f%s\n",
                   kColorDC, kColorWhite, kColorWhite,
-                  static_cast<unsigned>(kDCWindow), dc_est_q24, dc_1s_q24, dc_pct_fs, kColorReset);
+                  static_cast<unsigned>(kDCWindow), (long)dc_est_q24, (long)dc_1s_q24, dc_pct_fs, kColorReset);
 
-    Serial.printf("%sDrift%s    : %sEMA=%.0f | Cnt=%.0f | %%FS=%.2f | Age=%us%s\n",
+    Serial.printf("%sDrift%s    : %sEMA=%.0f | Cnt=%.0f | %%FS=%.2f | Age=%lus%s\n",
                   kColorDrift, kColorWhite, kColorWhite,
-                  dc_ema_q24_d, drift_counts, drift_pct, baseline_age_sec, kColorReset);
+                  dc_ema_q24_d, drift_counts, drift_pct, (unsigned long)baseline_age_sec, kColorReset);
   }
 
   if (debug_flags::enabled(debug_flags::kGroupAPInput)) {
@@ -356,24 +477,24 @@ static void maybe_emit_summary() {
   }
 
   if (debug_flags::enabled(debug_flags::kGroupDCAndDrift)) {
-    Serial.printf("%sDiagnostics%s : %sQuiet=%us | Note=%s%s\n",
+    Serial.printf("%sDiagnostics%s : %sQuiet=%lus | Note=%s%s\n",
                   kColorDiag, kColorWhite, kColorWhite,
-                  quiet_secs, rebase_note_clean, kColorReset);
+                  (unsigned long)quiet_secs, rebase_note_clean, kColorReset);
   }
 
   if (debug_mode) {
-    Serial.printf("CSV,%lu,%d,%.3f,%.2f,%.2f,%.3f,%.3f,%u,%.0f,%.2f,%u,%+.2f,%.1f\n",
+    Serial.printf("CSV,%lu,%ld,%.3f,%.2f,%.2f,%.3f,%.3f,%lu,%.0f,%.2f,%lu,%+.2f,%.1f\n",
                   static_cast<unsigned long>(uptime_sec),
-                  dc_1s_q24,
+                  (long)dc_1s_q24,
                   dc_pct_fs,
                   ac_rms_dbfs,
                   qstep_ok,
                   clip_rate_pct,
                   drift_pct,
-                  quiet_secs,
+                  (unsigned long)quiet_secs,
                   drift_counts,
                   drift_pct,
-                  baseline_age_sec,
+                  (unsigned long)baseline_age_sec,
                   cal_db,
                   kCalToneSPL_dB);
   }
@@ -389,32 +510,25 @@ static void maybe_emit_summary() {
 
 // -------------------- Bulk chunk reader --------------------
 bool read_q24_chunk(int32_t* out_q24, size_t n) {
-  if (!out_q24 || n == 0) {
+  if (!out_q24 || n == 0 || n > chunk_size || !g_capture_queue) {
     return false;
   }
 
-  g_audio_tracer.start_i2s();
-  const uint32_t t0 = micros();
-  const size_t bytes_needed = n * sizeof(int32_t);
-  size_t bytes_read = 0;
-  int32_t buf[chunk_size];
-  // Legacy driver: non-blocking with 10ms cap to avoid long stalls
-  esp_err_t err = i2s_read(I2S_PORT, buf, bytes_needed, &bytes_read, pdMS_TO_TICKS(10));
-  const uint32_t elapsed_us = micros() - t0;
-  if (err != ESP_OK || bytes_read != bytes_needed) {
-    TRACE_ERROR(ERROR_I2S_TIMEOUT,
-                ((err & 0xFFFF) << 16) | static_cast<uint32_t>(bytes_read & 0xFFFF));
+  CaptureChunk chunk{};
+  if (xQueueReceive(g_capture_queue, &chunk, portMAX_DELAY) != pdTRUE) {
+    TRACE_ERROR(ERROR_I2S_TIMEOUT, 0);
     return false;
   }
-  for (size_t i = 0; i < n; ++i) {
-    out_q24[i] = (buf[i] >> 8);
+  // Optional: single flush to prefer newest
+  CaptureChunk newer{};
+  if (xQueueReceive(g_capture_queue, &newer, 0) == pdTRUE) {
+    chunk = newer;
   }
-  g_audio_tracer.end_i2s(elapsed_us, static_cast<uint32_t>(bytes_read));
 
   for (size_t i = 0; i < n; ++i) {
+    out_q24[i] = chunk.samples[i];
     process_sample_q24(out_q24[i]);
   }
-
   return true;
 }
 

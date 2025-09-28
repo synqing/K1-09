@@ -91,7 +91,8 @@ struct TempoState {
   float silence_level = 1.0f;
   bool  silence = true;
 
-  uint32_t frame_counter = 0;
+  uint32_t frame_counter = 0;      // total ingests
+  uint32_t heavy_counter = 0;      // heavy cycles executed
 #if AUDIO_DIAG_TEMPO
   uint32_t diag_counter = 0;
 #endif
@@ -293,9 +294,7 @@ static void find_top_peaks(const float* acf, PeakInfo* peaks, int count) {
   for (int i = 0; i < count; ++i) {
     for (int j = i + 1; j < count; ++j) {
       if (peaks[j].height > peaks[i].height) {
-        PeakInfo tmp = peaks[i];
-        peaks[i] = peaks[j];
-        peaks[j] = tmp;
+        PeakInfo tmp = peaks[i]; peaks[i] = peaks[j]; peaks[j] = tmp;
       }
     }
   }
@@ -395,69 +394,33 @@ bool tempo_init() {
 }
 
 void tempo_ingest(const int32_t* q24_chunk) {
+  // Ring in time-domain samples for windowed-FFT when heavy cycle comes
   for (int i = 0; i < kHopSize; ++i) {
     float sample = (float)q24_chunk[i] / 8388607.0f;
     g_state.sample_ring[g_state.sample_head] = sample;
     g_state.sample_head = (g_state.sample_head + 1u) % kFFTSize;
     ++g_state.samples_seen;
   }
-
-  if (g_state.samples_seen < (uint32_t)kFFTSize) {
-    return;
-  }
-
-  uint32_t start = (kFFTSize + g_state.sample_head - kFFTSize) % kFFTSize;
-  uint32_t idx = start;
-  for (int n = 0; n < kFFTSize; ++n) {
-    float windowed = g_state.sample_ring[idx] * g_state.fft_window[n];
-    g_state.fft_input[2 * n]     = windowed;
-    g_state.fft_input[2 * n + 1] = 0.0f;
-    idx = (idx + 1u) % kFFTSize;
-  }
-
-  dsps_fft2r_fc32(g_state.fft_input, kFFTSize);
-  dsps_bit_rev2r_fc32(g_state.fft_input, kFFTSize);
-  dsps_cplx2reC_fc32(g_state.fft_input, kFFTSize);
-
-  float band_flux_raw[4] = {0};
-  for (int bin = 1; bin < kFFTBins; ++bin) {
-    float real = g_state.fft_input[2 * bin];
-    float imag = g_state.fft_input[2 * bin + 1];
-    float mag = sqrtf(real * real + imag * imag);
-    float diff = mag - g_state.prev_bin_mag[bin];
-    g_state.prev_bin_mag[bin] = mag;
-    if (diff <= 0.0f) continue;
-    for (int band = 0; band < 4; ++band) {
-      if (bin >= g_band_bins[band].start_bin && bin <= g_band_bins[band].end_bin) {
-        band_flux_raw[band] += diff;
-        break;
-      }
-    }
-  }
-
-  float band_values[4];
-  for (int b = 0; b < 4; ++b) {
-    BandState& bs = g_state.bands[b];
-    float flux = band_flux_raw[b];
-    if (flux < 0.0f) flux = 0.0f;
-    if (bs.count < bs.window) ++bs.count;
-    bs.history[bs.head] = flux;
-    bs.head = (uint16_t)((bs.head + 1u) % bs.window);
-    float median = median_band(bs);
-    float novelty = flux - median;
-    if (novelty < 0.0f) novelty = 0.0f;
-    band_values[b] = novelty;
-  }
-
-  g_state.low_band_flux = band_values[0];
-  float novelty_mix = 0.0f;
-  for (int b = 0; b < 4; ++b) {
-    novelty_mix += band_values[b] * kNoveltyBandWeights[b];
-  }
-  push_novelty(novelty_mix, g_state.low_band_flux, band_values[2]);
-  update_tempogram();
-  update_silence_gate();
   ++g_state.frame_counter;
+
+  // We still push a lightweight novelty estimate each frame:
+  // use low-band absolute energy proxy from time-domain as a tiny placeholder.
+  // (Keeps silence/energy gating responsive without doing FFT each 8 ms.)
+  float proxy_novelty = 0.0f;
+  {
+    // very cheap rectified average as proxy
+    float acc = 0.0f;
+    for (int i = 0; i < kHopSize; ++i) {
+      float s = (float)q24_chunk[i] / 8388607.0f;
+      acc += (s >= 0 ? s : -s);
+    }
+    proxy_novelty = acc / (float)kHopSize; // 0..1-ish
+  }
+  // Push a tiny low/hm split guess (both same proxy here; real split arrives on heavy cycle)
+  push_novelty(proxy_novelty, proxy_novelty * 0.7f, proxy_novelty * 0.3f);
+
+  update_silence_gate();
+  // Heavy work deferred to tempo_update() on decimated schedule
 }
 
 struct LaneCandidate {
@@ -488,15 +451,116 @@ void tempo_update(q16& out_tempo_bpm_q16,
     return;
   }
 
-  update_tempogram();
+  // ---- Only every TEMPO_DECIMATE_N frames do the heavy pipeline ----
+  const bool do_heavy = (g_state.frame_counter % (uint32_t)TEMPO_DECIMATE_N) == 0u;
 
-  PeakInfo peaks_mix[4];
-  find_top_peaks(g_state.acf_values, peaks_mix, 4);
+  if (do_heavy) {
+    // Prepare FFT input from the latest kFFTSize samples
+    if (g_state.samples_seen >= (uint32_t)kFFTSize) {
+      uint32_t start = (kFFTSize + g_state.sample_head - kFFTSize) % kFFTSize;
+      uint32_t idx = start;
+      for (int n = 0; n < kFFTSize; ++n) {
+        float windowed = g_state.sample_ring[idx] * g_state.fft_window[n];
+        g_state.fft_input[2 * n]     = windowed;
+        g_state.fft_input[2 * n + 1] = 0.0f;
+        idx = (idx + 1u) % kFFTSize;
+      }
+
+      dsps_fft2r_fc32(g_state.fft_input, kFFTSize);
+      dsps_bit_rev2r_fc32(g_state.fft_input, kFFTSize);
+      dsps_cplx2reC_fc32(g_state.fft_input, kFFTSize);
+
+      // Spectral delta by band
+      float band_flux_raw[4] = {0};
+      for (int bin = 1; bin < kFFTBins; ++bin) {
+        float real = g_state.fft_input[2 * bin];
+        float imag = g_state.fft_input[2 * bin + 1];
+        float mag = sqrtf(real * real + imag * imag);
+        float diff = mag - g_state.prev_bin_mag[bin];
+        g_state.prev_bin_mag[bin] = mag;
+        if (diff <= 0.0f) continue;
+        for (int band = 0; band < 4; ++band) {
+          if (bin >= g_band_bins[band].start_bin && bin <= g_band_bins[band].end_bin) {
+            band_flux_raw[band] += diff;
+            break;
+          }
+        }
+      }
+
+      // Median-based novelty per band
+      float band_values[4];
+      for (int b = 0; b < 4; ++b) {
+        BandState& bs = g_state.bands[b];
+        float flux = band_flux_raw[b];
+        if (flux < 0.0f) flux = 0.0f;
+        if (bs.count < bs.window) ++bs.count;
+        bs.history[bs.head] = flux;
+        bs.head = (uint16_t)((bs.head + 1u) % bs.window);
+        float median = median_band(bs);
+        float novelty = flux - median;
+        if (novelty < 0.0f) novelty = 0.0f;
+        band_values[b] = novelty;
+      }
+
+      g_state.low_band_flux = band_values[0];
+
+      float novelty_mix = 0.0f;
+      for (int b = 0; b < 4; ++b) {
+        novelty_mix += band_values[b] * kNoveltyBandWeights[b];
+      }
+      // Overwrite the latest slot with higher-fidelity values (keeps ring “recent” accurate)
+      uint32_t back1 = (g_state.novelty_head + kTempogramFrames - 1u) % kTempogramFrames;
+      g_state.novelty_mix_hist[back1] = novelty_mix;
+      g_state.novelty_low_hist[back1] = g_state.low_band_flux;
+      g_state.novelty_hm_hist [back1] = band_values[2];
+
+      // Refresh tempogram
+      compute_acf_for(g_state.novelty_mix_hist, g_state.acf_values);
+      compute_acf_for(g_state.novelty_hm_hist,  g_state.acf_hm_values);
+
+      ++g_state.heavy_counter;
+    }
+  }
+
+  // ---- From here down, same selection logic as before ----
+
+  // If we haven’t run heavy yet, we still advance PLL timing to keep phase moving
+  if (g_state.period_frames > EPSILON) {
+    (void)update_phase_pll();
+  }
+
+  // Re-evaluate peaks only when heavy ran; otherwise reuse last ACFs
+  struct PeakInfo { int lag; float height; } peaks_mix[4], peaks_hm[4];
+  for (int i=0;i<4;++i){peaks_mix[i]={-1,0.0f};peaks_hm[i]={-1,0.0f};}
+  for (int lag = 1; lag < kLagCount - 1; ++lag) {
+    float h = g_state.acf_values[lag];
+    if (h <= 0.0f) continue;
+    if (h < g_state.acf_values[lag - 1] || h < g_state.acf_values[lag + 1]) continue;
+    // insert into top4 for mix
+    for (int i = 0; i < 4; ++i) {
+      if (peaks_mix[i].lag < 0 || h > peaks_mix[i].height) {
+        for (int j = 3; j > i; --j) peaks_mix[j] = peaks_mix[j-1];
+        peaks_mix[i] = {lag, h};
+        break;
+      }
+    }
+  }
+  for (int lag = 1; lag < kLagCount - 1; ++lag) {
+    float h = g_state.acf_hm_values[lag];
+    if (h <= 0.0f) continue;
+    if (h < g_state.acf_hm_values[lag - 1] || h < g_state.acf_hm_values[lag + 1]) continue;
+    for (int i = 0; i < 4; ++i) {
+      if (peaks_hm[i].lag < 0 || h > peaks_hm[i].height) {
+        for (int j = 3; j > i; --j) peaks_hm[j] = peaks_hm[j-1];
+        peaks_hm[i] = {lag, h};
+        break;
+      }
+    }
+  }
+
   if (peaks_mix[0].lag < 0) {
     return;
   }
-  PeakInfo peaks_hm[4];
-  find_top_peaks(g_state.acf_hm_values, peaks_hm, 4);
 
   float base_period = g_state.period_frames > 0.0f
                           ? g_state.period_frames
@@ -519,7 +583,17 @@ void tempo_update(q16& out_tempo_bpm_q16,
   static constexpr float kPeriodMultipliers[kLaneCount] = {2.0f, 1.0f, (2.0f / 3.0f), 0.5f};
   static constexpr const char* kLaneNames[kLaneCount] = {"0.5x", "1x", "1.5x", "2x"};
 
-  LaneCandidate lanes[kLaneCount];
+  struct LaneCandidate {
+    const char* name;
+    float period;
+    float bpm;
+    float prominence;
+    float phase_low;
+    float phase_hm;
+    float phase_blend;
+    float score;
+  } lanes[kLaneCount];
+
   float secondary_height = (peaks_mix[1].lag >= 0) ? peaks_mix[1].height : 0.0f;
   for (int i = 0; i < kLaneCount; ++i) {
     float candidate_period = base_period * kPeriodMultipliers[i];
@@ -531,15 +605,8 @@ void tempo_update(q16& out_tempo_bpm_q16,
     float phase_hm  = compute_phase_score(g_state.novelty_hm_hist, candidate_period);
     float phase_blend = kPhaseWeightLow * phase_low + kPhaseWeightHM * phase_hm;
     float score = 0.6f * prominence + 0.4f * phase_blend;
-    lanes[i] = LaneCandidate{
-        kLaneNames[i],
-        candidate_period,
-        bpm_from_period(candidate_period),
-        prominence,
-        phase_low,
-        phase_hm,
-        phase_blend,
-        score};
+    lanes[i] = { kLaneNames[i], candidate_period, bpm_from_period(candidate_period),
+                 prominence, phase_low, phase_hm, phase_blend, score };
   }
 
   uint8_t prev_lane = g_state.current_lane;
@@ -548,7 +615,7 @@ void tempo_update(q16& out_tempo_bpm_q16,
   float current_score = lanes[prev_lane].score;
   float biased_current = current_score;
   if (lane_hold_seconds > 1.0f) {
-    biased_current += kStickyBiasAfter1s;
+    biased_current += 0.03f; // sticky bias
   }
   float current_bpm = lanes[prev_lane].bpm;
   float current_phase_hm = lanes[prev_lane].phase_hm;
@@ -558,18 +625,18 @@ void tempo_update(q16& out_tempo_bpm_q16,
 
   for (int i = 0; i < kLaneCount; ++i) {
     if (i == prev_lane) continue;
-    const LaneCandidate& cand = lanes[i];
+    const auto& cand = lanes[i];
     bool faster = cand.bpm > current_bpm + 0.5f;
     bool slower = cand.bpm + 0.5f < current_bpm;
     if (faster) {
-      if ((cand.score - biased_current) >= kSwitchUpMinDelta &&
-          (cand.phase_hm - current_phase_hm) >= kHMPhaseAdvForGearUp &&
+      if ((cand.score - biased_current) >= 0.04f &&
+          (cand.phase_hm - current_phase_hm) >= 0.03f &&
           cand.score > chosen_score) {
         chosen_lane = (uint8_t)i;
         chosen_score = cand.score;
       }
     } else if (slower) {
-      if ((cand.score - biased_current) >= kSwitchDownMinDelta &&
+      if ((cand.score - biased_current) >= 0.08f &&
           cand.score > chosen_score) {
         chosen_lane = (uint8_t)i;
         chosen_score = cand.score;
@@ -600,10 +667,10 @@ void tempo_update(q16& out_tempo_bpm_q16,
   float bpm = lanes[chosen_lane].bpm;
   float strength = fminf(1.0f, fmaxf(0.0f, lanes[chosen_lane].score));
 
-  g_state.confidence += kConfidenceAlpha * (strength - g_state.confidence);
-  if (g_state.confidence >= kConfidenceOn) {
+  g_state.confidence += 0.20f * (strength - g_state.confidence);
+  if (g_state.confidence >= 0.60f) {
     g_state.beat_enabled = true;
-  } else if (g_state.confidence <= kConfidenceOff) {
+  } else if (g_state.confidence <= 0.42f) {
     g_state.beat_enabled = false;
   }
 
@@ -629,73 +696,15 @@ void tempo_update(q16& out_tempo_bpm_q16,
   if (debug_flags::enabled(debug_flags::kGroupTempoFlux)) {
     const uint32_t counter = ++g_state.diag_counter;
     if ((counter % kTempoDiagPeriod) == 0u) {
-      Serial.printf("[tempo] bpm=%.1f strength=%.2f conf=%.2f silence=%.2f ready=%d beat=%u\n",
+      Serial.printf("[tempo] bpm=%.1f strength=%.2f conf=%.2f silence=%.2f ready=%d beat=%u heavy=%lu/%lu\n",
                     bpm,
                     strength,
                     g_state.confidence,
                     g_state.silence_level,
                     g_state.novelty_full ? 1 : 0,
-                    (unsigned)out_beat_flag);
-
-      const bool emit_detail = ((counter / kTempoDiagPeriod) % 4u) == 0u;
-      if (emit_detail) {
-        Serial.printf("[cand] ");
-        for (int i = 0; i < kLaneCount; ++i) {
-          const LaneCandidate& cand = lanes[i];
-          Serial.printf("%s s=%.3f pL=%.2f pHM=%.2f%s",
-                        cand.name,
-                        cand.score,
-                        cand.phase_low,
-                        cand.phase_hm,
-                        (i == kLaneCount - 1) ? "" : " | ");
-        }
-        Serial.printf(" | pick=%s\n", lanes[chosen_lane].name);
-
-        Serial.printf("[acf] mix:{");
-        for (int i = 0; i < 4; ++i) {
-          if (peaks_mix[i].lag < 0) continue;
-          float peak_period = (float)(kMinPeriodFrames + peaks_mix[i].lag);
-          float peak_bpm = bpm_from_period(peak_period);
-          Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
-                        kMinPeriodFrames + peaks_mix[i].lag,
-                        peak_bpm,
-                        peaks_mix[i].height,
-                        (i == 3) ? "" : " ");
-        }
-        Serial.printf("} hm:{");
-        for (int i = 0; i < 2; ++i) {
-          if (peaks_hm[i].lag < 0) continue;
-          float peak_period = (float)(kMinPeriodFrames + peaks_hm[i].lag);
-          float peak_bpm = bpm_from_period(peak_period);
-          Serial.printf("lag=%d bpm=%.1f height=%.3f%s",
-                        kMinPeriodFrames + peaks_hm[i].lag,
-                        peak_bpm,
-                        peaks_hm[i].height,
-                        (i == 1) ? "" : " ");
-        }
-        Serial.println("}");
-
-        uint32_t window = (uint32_t)kEnergyEvalFrames;
-        uint32_t avail = available_frames();
-        if (window > avail) window = avail;
-        if (window > 0) {
-          float sum = 0.0f;
-          float peak_flux = 0.0f;
-          int buckets[6] = {0};
-          for (uint32_t i = 0; i < window; ++i) {
-            float v = get_recent(g_state.novelty_low_hist, i);
-            sum += v;
-            if (v > peak_flux) peak_flux = v;
-            int bucket = (int)(v / 0.25f);
-            if (bucket < 0) bucket = 0;
-            if (bucket > 5) bucket = 5;
-            buckets[bucket] += 1;
-          }
-          Serial.printf("[flux] avg=%.3f peak=%.3f samples=%u buckets:[0-0.25]=%d [0.25-0.5]=%d [0.5-0.75]=%d [0.75-1.0]=%d [1.0-1.25]=%d [>1.25]=%d\n",
-                        sum / (float)window, peak_flux, window,
-                        buckets[0], buckets[1], buckets[2], buckets[3], buckets[4], buckets[5]);
-        }
-      }
+                    (unsigned)out_beat_flag,
+                    (unsigned long)g_state.heavy_counter,
+                    (unsigned long)g_state.frame_counter);
     }
   }
 #endif

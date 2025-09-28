@@ -4,10 +4,8 @@
 #include "audio_bus.h"  // for q16
 
 /* ================= Tempo Lane (single core, static, linear) =================
-   Consumes: flux (linear Q16.16) each AP tick.
-   Produces: tempo_bpm (Q16.16 BPM), beat_phase (Q16.16 [0,1)),
-             beat_strength (Q16.16 [0,1]), beat_flag (0/1 pulse on wrap).
-   CPU bounded via interlacing small number of tempo bins per tick.
+   Decimation-friendly: heavy work (FFT/ACF/peaks) can run every N frames
+   (TEMPO_DECIMATE_N), while ingest still occurs at audio cadence.
 ============================================================================= */
 
 namespace tempo_lane {
@@ -34,7 +32,12 @@ namespace tempo_lane {
 
 // Magnitude smoothing (EMA on bin magnitudes, linear)
 #ifndef TEMPO_MAG_EMA_ALPHA
-#define TEMPO_MAG_EMA_ALPHA 0.20  // snappy tracking
+#define TEMPO_MAG_EMA_ALPHA 0.20
+#endif
+
+// *** NEW: decimate heavy processing to every N frames (default 4 => 32 ms) ***
+#ifndef TEMPO_DECIMATE_N
+#define TEMPO_DECIMATE_N 4u
 #endif
 
 // Initialize static state (rings, bin coefficients/window)
@@ -43,8 +46,7 @@ bool tempo_init();
 // Feed one AP tick worth of raw audio (Q24 chunk of length chunk_size).
 void tempo_ingest(const int32_t* q24_chunk);
 
-// Update a small number of tempo bins (interlaced). Call once per AP tick.
-// Writes results to the provided outputs.
+// Update (heavy parts may execute only each TEMPO_DECIMATE_N frames)
 void tempo_update(q16& out_tempo_bpm_q16,
                   q16& out_beat_phase_q16,
                   q16& out_beat_strength_q16,

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "ws2812_dual_rmt.h"
+
 namespace vp {
 
 void LedFrame::clear() {
@@ -27,12 +29,13 @@ void LedDriver::init(uint8_t brightness) {
     FastLED.addLeds<WS2812B, kSecondaryDataPin, GRB>(leds_ + kStrip1Leds, kStrip2Leds);
     FastLED.setDither(false);
     FastLED.setMaxRefreshRate(0, true);
+    ws2812_ng_init(static_cast<gpio_num_t>(kPrimaryDataPin),
+                   static_cast<gpio_num_t>(kSecondaryDataPin),
+                   kStrip1Leds);
     ready_ = true;
   }
   brightness_ = brightness;
-  FastLED.setBrightness(brightness_);
   fill_solid(leds_, kLedCount, CRGB::Black);
-  FastLED.show();
 }
 
 LedFrame LedDriver::begin_frame() {
@@ -51,8 +54,20 @@ void LedDriver::show() {
   if (!ready_) {
     return;
   }
-  FastLED.setBrightness(brightness_);
-  FastLED.show();
+  const CRGB* out0 = leds_;
+  const CRGB* out1 = leds_ + kStrip1Leds;
+
+  if (brightness_ < 255) {
+    for (uint16_t i = 0; i < kLedCount; ++i) {
+      scaled_[i] = leds_[i];
+      scaled_[i].nscale8_video(brightness_);
+    }
+    out0 = scaled_;
+    out1 = scaled_ + kStrip1Leds;
+  }
+
+  uint32_t target_us = ws2812_ng_frame_time_us();
+  ws2812_ng_show_dual_paced(out0, out1, target_us);
 }
 
 void LedDriver::set_brightness(uint8_t value) {

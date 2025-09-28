@@ -24,7 +24,7 @@ int32_t read_dc_offset_1s_q24();  // exact 1-second mean
  * @param out_q24  Destination buffer of length N (int32). On return contains Q24 signed samples.
  * @param n        Number of samples to read (unsigned int to match toolchain symbol).
  */
-bool read_q24_chunk(int* out_q24, unsigned int n);
+bool read_q24_chunk(int32_t* out_q24, unsigned int n);
 
 float read_sample_rate_hz();
 

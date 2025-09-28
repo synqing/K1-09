@@ -23,6 +23,8 @@ class LedDriver {
   LedFrame begin_frame();
 
   // Apply global brightness curve and present.
+  // NOTE: Lightshow rendering is centre-origin only—effects must always keep
+  // symmetry about the midpoint of each strip pair (push out or collapse in).
   void show();
 
   // Accessors
@@ -41,6 +43,7 @@ class LedDriver {
   static constexpr uint16_t kLedCount = kStrip1Leds + kStrip2Leds;
 
   CRGB leds_[kLedCount];
+  CRGB scaled_[kLedCount];
   uint8_t brightness_ = 140;
   bool ready_ = false;
 };

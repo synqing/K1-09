@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 // L1 mic bring-up (unchanged namespace)
 #include "AP/sph0645.h"
@@ -81,17 +83,54 @@ void vp_test_render() {
 
 } // namespace (anon)
 
+// ---------------- Audio consumer task (decouple capture from loop) ----------------
+static TaskHandle_t g_audio_consumer_task = nullptr;
+
+static void audio_consumer_task(void*) {
+  int32_t local_chunk[chunk_size];
+  const uint32_t budget_us = (uint32_t)((uint64_t)chunk_size * 1000000ULL / (uint64_t)audio_sample_rate);
+  for (;;) {
+    const bool chunk_ready = K1Lightwave::Audio::Sph0645::read_q24_chunk(local_chunk, chunk_size);
+    const uint32_t audio_event_ms = millis();
+    pipeline_guard::notify_audio_chunk(chunk_ready, audio_event_ms);
+    if (!chunk_ready) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+      continue;
+    }
+
+    const uint32_t t0 = micros();
+    audio_pipeline_tick(local_chunk, audio_event_ms);
+    const uint32_t dt = micros() - t0;
+    (void)budget_us; (void)dt; // budget/telemetry reserved
+    taskYIELD();
+  }
+}
+
+static void start_audio_consumer_task() {
+  if (g_audio_consumer_task) return;
+  const BaseType_t ok = xTaskCreatePinnedToCore(
+      audio_consumer_task, "audio_consumer", 4096, nullptr, tskIDLE_PRIORITY + 10,
+      &g_audio_consumer_task, 1);
+  if (ok != pdPASS) {
+    Serial.println("[audio] FATAL: unable to start consumer task");
+    while (true) { delay(100); }
+  }
+}
+
 // Q24 buffer (24-bit mic data widened to 32-bit after >>8)
 static int32_t q24_chunk[chunk_size];
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
 
   // Layer 1: mic / I2S
   K1Lightwave::Audio::Sph0645::setup();
 
   // Layer 2: audio producer
   audio_pipeline_init();
+
+  // Launch dedicated consumer so I2S is serviced at exact cadence
+  start_audio_consumer_task();
 
   // Visual pipeline
   vp::init();
@@ -112,18 +151,8 @@ void loop() {
     handle_debug_key(c);
   }
 
-  // Producer: pull exactly one full 128-sample chunk (Q24)
-  bool chunk_ready = K1Lightwave::Audio::Sph0645::read_q24_chunk(q24_chunk, chunk_size);
-  const uint32_t audio_event_ms = millis();
-  pipeline_guard::notify_audio_chunk(chunk_ready, audio_event_ms);
-
-  if (chunk_ready) {
-    // Publish one AudioFrame (producer)
-    audio_pipeline_tick(q24_chunk, audio_event_ms);
-
-    // Optional: AP-side telemetry
-    vp_test_render();
-  }
+  // Audio is produced by the dedicated task; optional AP telemetry remains
+  vp_test_render();
 
   // *** IMPORTANT CHANGE ***
   // Consumer: always tick VP every loop, even if mic read missed this pass.
